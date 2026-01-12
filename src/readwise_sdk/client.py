@@ -19,6 +19,8 @@ from readwise_sdk.exceptions import (
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from readwise_sdk.v2.client import ReadwiseV2Client
+
 # API base URLs
 READWISE_API_V2_BASE = "https://readwise.io/api/v2"
 READWISE_API_V3_BASE = "https://readwise.io/api/v3"
@@ -167,6 +169,26 @@ class BaseClient:
 
 class ReadwiseClient(BaseClient):
     """Synchronous Readwise client with access to v2 and v3 APIs."""
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        timeout: float = DEFAULT_TIMEOUT,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        retry_backoff: float = DEFAULT_RETRY_BACKOFF,
+    ) -> None:
+        """Initialize the client."""
+        super().__init__(api_key, timeout, max_retries, retry_backoff)
+        self._v2: ReadwiseV2Client | None = None
+
+    @property
+    def v2(self) -> ReadwiseV2Client:
+        """Access the Readwise API v2 client for highlights, books, and tags."""
+        if self._v2 is None:
+            from readwise_sdk.v2.client import ReadwiseV2Client
+
+            self._v2 = ReadwiseV2Client(self)
+        return self._v2
 
     def validate_token(self) -> bool:
         """Validate the API token.
