@@ -30,6 +30,13 @@ from readwise_sdk.v3 import (
     DocumentLocation,
     DocumentTag,
 )
+from readwise_sdk.workflows import (
+    BackgroundPoller,
+    DigestBuilder,
+    DigestFormat,
+    ReadingInbox,
+    TagWorkflow,
+)
 
 __version__ = "0.1.0"
 
@@ -62,4 +69,10 @@ __all__ = [
     "DocumentManager",
     "SyncManager",
     "SyncState",
+    # Workflows
+    "DigestBuilder",
+    "DigestFormat",
+    "BackgroundPoller",
+    "TagWorkflow",
+    "ReadingInbox",
 ]
