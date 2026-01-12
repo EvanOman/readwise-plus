@@ -9,6 +9,13 @@ from readwise_sdk.exceptions import (
     ServerError,
     ValidationError,
 )
+from readwise_sdk.managers import (
+    BookManager,
+    DocumentManager,
+    HighlightManager,
+    SyncManager,
+    SyncState,
+)
 from readwise_sdk.v2 import (
     Book,
     BookCategory,
@@ -49,4 +56,10 @@ __all__ = [
     "DocumentCategory",
     "DocumentLocation",
     "DocumentTag",
+    # Managers
+    "HighlightManager",
+    "BookManager",
+    "DocumentManager",
+    "SyncManager",
+    "SyncState",
 ]
