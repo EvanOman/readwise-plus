@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.0 (2026-01-18)
+
+
+### Features
+
+* add full async support with AsyncReadwiseClient ([c600b14](https://github.com/EvanOman/readwise-sdk/commit/c600b143123ae3333a5baab5cd206e53ef8af00e))
+* **cli:** add tag management commands ([45359a0](https://github.com/EvanOman/readwise-sdk/commit/45359a020bdf5902be0467c27175a39afa6f9e8e)), closes [#10](https://github.com/EvanOman/readwise-sdk/issues/10)
+
+
+### Documentation
+
+* add MkDocs documentation site with GitHub Pages deployment ([fcb75f5](https://github.com/EvanOman/readwise-sdk/commit/fcb75f522997f6049aac3c537a5cd28dd628cac5)), closes [#8](https://github.com/EvanOman/readwise-sdk/issues/8)
+* improve README with comprehensive examples and badges ([5efcf4e](https://github.com/EvanOman/readwise-sdk/commit/5efcf4e6bc27b4a161bcad047e5058c4f3c407f5)), closes [#13](https://github.com/EvanOman/readwise-sdk/issues/13)
+
 ## [0.1.0](https://github.com/EvanOman/readwise-sdk/releases/tag/v0.1.0) (2025-01-17)
 
 ### Features
