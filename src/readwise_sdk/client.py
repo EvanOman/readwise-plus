@@ -73,7 +73,7 @@ class BaseClient:
                 headers={
                     "Authorization": f"Token {self.api_key}",
                     "Content-Type": "application/json",
-                    "User-Agent": "readwise-sdk/0.1.0",
+                    "User-Agent": "readwise-plus/0.1.0",
                 },
             )
         return self._client
@@ -314,7 +314,7 @@ class AsyncReadwiseClient:
                 headers={
                     "Authorization": f"Token {self.api_key}",
                     "Content-Type": "application/json",
-                    "User-Agent": "readwise-sdk/0.1.0",
+                    "User-Agent": "readwise-plus/0.1.0",
                 },
             )
         return self._client

@@ -1,10 +1,10 @@
 # readwise-plus
 
-[![CI](https://github.com/EvanOman/readwise-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/EvanOman/readwise-sdk/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/EvanOman/readwise-sdk/branch/main/graph/badge.svg)](https://codecov.io/gh/EvanOman/readwise-sdk)
+[![CI](https://github.com/EvanOman/readwise-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/EvanOman/readwise-plus/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/EvanOman/readwise-plus/branch/main/graph/badge.svg)](https://codecov.io/gh/EvanOman/readwise-plus)
 [![PyPI version](https://badge.fury.io/py/readwise-plus.svg)](https://pypi.org/project/readwise-plus/)
 [![Python versions](https://img.shields.io/pypi/pyversions/readwise-plus)](https://pypi.org/project/readwise-plus/)
-[![License](https://img.shields.io/github/license/EvanOman/readwise-sdk)](https://github.com/EvanOman/readwise-sdk/blob/main/LICENSE)
+[![License](https://img.shields.io/github/license/EvanOman/readwise-plus)](https://github.com/EvanOman/readwise-plus/blob/main/LICENSE)
 
 Comprehensive Python SDK for [Readwise](https://readwise.io) with high-level workflow abstractions. Supports both the Readwise API (v2) for highlights/books and the Reader API (v3) for documents.
 
@@ -412,8 +412,8 @@ readwise sync incremental --state-file sync.json
 
 ```bash
 # Clone the repository
-git clone https://github.com/EvanOman/readwise-sdk.git
-cd readwise-sdk
+git clone https://github.com/EvanOman/readwise-plus.git
+cd readwise-plus
 
 # Install dependencies
 just install

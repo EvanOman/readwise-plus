@@ -274,7 +274,7 @@ cli = [
 
 ### Project Structure
 ```
-readwise-sdk/
+readwise-plus/
 ├── src/
 │   └── readwise_sdk/
 │       ├── __init__.py

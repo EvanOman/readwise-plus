@@ -1,8 +1,8 @@
 site_name: readwise-plus
 site_description: Comprehensive Python SDK for Readwise with high-level workflow abstractions
-site_url: https://evanoman.github.io/readwise-sdk
-repo_url: https://github.com/EvanOman/readwise-sdk
-repo_name: EvanOman/readwise-sdk
+site_url: https://evanoman.github.io/readwise-plus
+repo_url: https://github.com/EvanOman/readwise-plus
+repo_name: EvanOman/readwise-plus
 
 theme:
   name: material
@@ -88,6 +88,6 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/EvanOman/readwise-sdk
+      link: https://github.com/EvanOman/readwise-plus
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/readwise-plus/

@@ -1,1 +1,1 @@
-"""Tests for readwise-sdk."""
+"""Tests for readwise-plus."""

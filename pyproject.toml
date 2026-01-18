@@ -29,9 +29,9 @@ cli = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/EvanOman/readwise-sdk"
-Repository = "https://github.com/EvanOman/readwise-sdk"
-Issues = "https://github.com/EvanOman/readwise-sdk/issues"
+Homepage = "https://github.com/EvanOman/readwise-plus"
+Repository = "https://github.com/EvanOman/readwise-plus"
+Issues = "https://github.com/EvanOman/readwise-plus/issues"
 
 [project.scripts]
 readwise = "readwise_sdk.cli.main:app"

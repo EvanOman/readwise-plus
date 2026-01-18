@@ -34,8 +34,8 @@ uv add readwise-plus[cli]
 To install from source for development:
 
 ```bash
-git clone https://github.com/EvanOman/readwise-sdk.git
-cd readwise-sdk
+git clone https://github.com/EvanOman/readwise-plus.git
+cd readwise-plus
 uv sync --dev
 ```
 

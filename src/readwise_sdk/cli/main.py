@@ -13,7 +13,7 @@ try:
     from rich.console import Console
     from rich.table import Table
 except ImportError:
-    print("CLI dependencies not installed. Install with: pip install readwise-sdk[cli]")
+    print("CLI dependencies not installed. Install with: pip install readwise-plus[cli]")
     sys.exit(1)
 
 from readwise_sdk.client import ReadwiseClient
@@ -744,7 +744,7 @@ def tag_report(
 @app.command("version")
 def version() -> None:
     """Show version information."""
-    console.print("readwise-sdk v0.1.0")
+    console.print("readwise-plus v0.1.0")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 Comprehensive Python SDK for [Readwise](https://readwise.io) with high-level workflow abstractions.
 
-[![CI](https://github.com/EvanOman/readwise-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/EvanOman/readwise-sdk/actions/workflows/ci.yml)
+[![CI](https://github.com/EvanOman/readwise-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/EvanOman/readwise-plus/actions/workflows/ci.yml)
 [![PyPI version](https://badge.fury.io/py/readwise-plus.svg)](https://pypi.org/project/readwise-plus/)
 [![Python versions](https://img.shields.io/pypi/pyversions/readwise-plus)](https://pypi.org/project/readwise-plus/)
 

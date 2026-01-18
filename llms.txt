@@ -1,4 +1,4 @@
-# readwise-sdk
+# readwise-plus
 
 > Comprehensive Python SDK for Readwise with high-level workflow abstractions. Provides both low-level API access and high-level managers for common operations on highlights, books, and documents.
 
@@ -218,7 +218,7 @@ BatchSync (for efficient synchronization with state tracking):
 ## Installation
 
 ```bash
-pip install readwise-sdk
+pip install readwise-plus
 ```
 
 ## Environment Variables
@@ -227,6 +227,6 @@ pip install readwise-sdk
 
 ## Links
 
-- [GitHub Repository](https://github.com/EvanOman/readwise-sdk)
+- [GitHub Repository](https://github.com/EvanOman/readwise-plus)
 - [Readwise API Documentation](https://readwise.io/api_deets)
 - [Reader API Documentation](https://readwise.io/reader_api)
