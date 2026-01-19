@@ -1,7 +1,7 @@
 # readwise-plus
 
 [![CI](https://github.com/EvanOman/readwise-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/EvanOman/readwise-plus/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/EvanOman/readwise-plus/branch/main/graph/badge.svg)](https://codecov.io/gh/EvanOman/readwise-plus)
+![coverage](assets/coverage.svg)
 [![PyPI version](https://badge.fury.io/py/readwise-plus.svg)](https://pypi.org/project/readwise-plus/)
 [![Python versions](https://img.shields.io/pypi/pyversions/readwise-plus)](https://pypi.org/project/readwise-plus/)
 [![License](https://img.shields.io/github/license/EvanOman/readwise-plus)](https://github.com/EvanOman/readwise-plus/blob/main/LICENSE)
