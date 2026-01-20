@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from readwise_sdk._utils import truncate_string
 from readwise_sdk.v2.models import BookCategory, HighlightCreate
 
 if TYPE_CHECKING:
@@ -74,6 +75,52 @@ class PushResult:
     was_truncated: bool = False
 
 
+def _to_create_request(
+    highlight: SimpleHighlight, auto_truncate: bool
+) -> tuple[HighlightCreate, bool]:
+    """Convert SimpleHighlight to HighlightCreate, optionally truncating.
+
+    Args:
+        highlight: The highlight to convert.
+        auto_truncate: Whether to truncate fields to API limits.
+
+    Returns:
+        Tuple of (HighlightCreate, was_truncated).
+    """
+    was_truncated = False
+
+    text = highlight.text
+    note = highlight.note
+    title = highlight.title
+    author = highlight.author
+
+    if auto_truncate:
+        text, t1 = truncate_string(text, MAX_TEXT_LENGTH)
+        note, t2 = truncate_string(note, MAX_NOTE_LENGTH)
+        title, t3 = truncate_string(title, MAX_TITLE_LENGTH)
+        author, t4 = truncate_string(author, MAX_AUTHOR_LENGTH)
+        was_truncated = any([t1, t2, t3, t4])
+        # Text must not be None after truncation
+        if text is None:
+            text = ""
+
+    return (
+        HighlightCreate(
+            text=text,
+            title=title,
+            author=author,
+            source_url=highlight.source_url,
+            source_type=highlight.source_type,
+            category=highlight.category,
+            note=note,
+            location=highlight.location,
+            location_type=highlight.location_type,
+            highlighted_at=highlight.highlighted_at,
+        ),
+        was_truncated,
+    )
+
+
 class HighlightPusher:
     """Simplified interface for pushing highlights to Readwise.
 
@@ -97,49 +144,6 @@ class HighlightPusher:
         """
         self._client = client
         self._auto_truncate = auto_truncate
-
-    def _truncate_field(self, value: str | None, max_length: int) -> tuple[str | None, bool]:
-        """Truncate a field to max length, returning (value, was_truncated)."""
-        if value is None:
-            return None, False
-        if len(value) <= max_length:
-            return value, False
-        return value[: max_length - 3] + "...", True
-
-    def _to_create_request(self, highlight: SimpleHighlight) -> tuple[HighlightCreate, bool]:
-        """Convert SimpleHighlight to HighlightCreate, optionally truncating."""
-        was_truncated = False
-
-        text = highlight.text
-        note = highlight.note
-        title = highlight.title
-        author = highlight.author
-
-        if self._auto_truncate:
-            text, t1 = self._truncate_field(text, MAX_TEXT_LENGTH)
-            note, t2 = self._truncate_field(note, MAX_NOTE_LENGTH)
-            title, t3 = self._truncate_field(title, MAX_TITLE_LENGTH)
-            author, t4 = self._truncate_field(author, MAX_AUTHOR_LENGTH)
-            was_truncated = any([t1, t2, t3, t4])
-            # Text must not be None after truncation
-            if text is None:
-                text = ""
-
-        return (
-            HighlightCreate(
-                text=text,
-                title=title,
-                author=author,
-                source_url=highlight.source_url,
-                source_type=highlight.source_type,
-                category=highlight.category,
-                note=note,
-                location=highlight.location,
-                location_type=highlight.location_type,
-                highlighted_at=highlight.highlighted_at,
-            ),
-            was_truncated,
-        )
 
     def push(
         self,
@@ -216,7 +220,7 @@ class HighlightPusher:
         create_requests = []
         truncation_flags = []
         for h in highlights:
-            req, was_truncated = self._to_create_request(h)
+            req, was_truncated = _to_create_request(h, self._auto_truncate)
             create_requests.append(req)
             truncation_flags.append(was_truncated)
 
@@ -304,48 +308,6 @@ class AsyncHighlightPusher:
         self._client = client
         self._auto_truncate = auto_truncate
 
-    def _truncate_field(self, value: str | None, max_length: int) -> tuple[str | None, bool]:
-        """Truncate a field to max length, returning (value, was_truncated)."""
-        if value is None:
-            return None, False
-        if len(value) <= max_length:
-            return value, False
-        return value[: max_length - 3] + "...", True
-
-    def _to_create_request(self, highlight: SimpleHighlight) -> tuple[HighlightCreate, bool]:
-        """Convert SimpleHighlight to HighlightCreate, optionally truncating."""
-        was_truncated = False
-
-        text = highlight.text
-        note = highlight.note
-        title = highlight.title
-        author = highlight.author
-
-        if self._auto_truncate:
-            text, t1 = self._truncate_field(text, MAX_TEXT_LENGTH)
-            note, t2 = self._truncate_field(note, MAX_NOTE_LENGTH)
-            title, t3 = self._truncate_field(title, MAX_TITLE_LENGTH)
-            author, t4 = self._truncate_field(author, MAX_AUTHOR_LENGTH)
-            was_truncated = any([t1, t2, t3, t4])
-            if text is None:
-                text = ""
-
-        return (
-            HighlightCreate(
-                text=text,
-                title=title,
-                author=author,
-                source_url=highlight.source_url,
-                source_type=highlight.source_type,
-                category=highlight.category,
-                note=note,
-                location=highlight.location,
-                location_type=highlight.location_type,
-                highlighted_at=highlight.highlighted_at,
-            ),
-            was_truncated,
-        )
-
     async def push(
         self,
         text: str,
@@ -421,7 +383,7 @@ class AsyncHighlightPusher:
         create_requests = []
         truncation_flags = []
         for h in highlights:
-            req, was_truncated = self._to_create_request(h)
+            req, was_truncated = _to_create_request(h, self._auto_truncate)
             create_requests.append(req)
             truncation_flags.append(was_truncated)
 

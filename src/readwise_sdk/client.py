@@ -7,14 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from readwise_sdk.exceptions import (
-    AuthenticationError,
-    NotFoundError,
-    RateLimitError,
-    ReadwiseError,
-    ServerError,
-    ValidationError,
-)
+from readwise_sdk._utils import handle_response, parse_pagination_cursor
+from readwise_sdk.exceptions import AuthenticationError, RateLimitError, ReadwiseError
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -90,39 +84,6 @@ class BaseClient:
     def __exit__(self, *args: Any) -> None:
         self.close()
 
-    def _handle_response(self, response: httpx.Response) -> httpx.Response:
-        """Handle HTTP response and raise appropriate exceptions."""
-        if response.is_success:
-            return response
-
-        body = response.text
-        status = response.status_code
-
-        if status == 401:
-            raise AuthenticationError(response_body=body)
-        elif status == 404:
-            raise NotFoundError(response_body=body)
-        elif status == 429:
-            retry_after = response.headers.get("Retry-After")
-            raise RateLimitError(
-                retry_after=int(retry_after) if retry_after else None,
-                response_body=body,
-            )
-        elif status == 400:
-            raise ValidationError(message=f"Validation error: {body}", response_body=body)
-        elif status >= 500:
-            raise ServerError(
-                message=f"Server error: {body}",
-                status_code=status,
-                response_body=body,
-            )
-        else:
-            raise ReadwiseError(
-                message=f"Unexpected error: {body}",
-                status_code=status,
-                response_body=body,
-            )
-
     def _request(
         self,
         method: str,
@@ -138,7 +99,7 @@ class BaseClient:
         for attempt in range(self.max_retries + 1):
             try:
                 response = self.client.request(method, url, params=params, json=json)
-                return self._handle_response(response)
+                return handle_response(response)
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 last_error = e
                 if attempt < self.max_retries:
@@ -246,16 +207,7 @@ class ReadwiseClient(BaseClient):
             if not next_cursor:
                 break
 
-            # Handle both full URLs and cursor strings
-            if next_cursor.startswith("http"):
-                # Extract path and query from full URL
-                from urllib.parse import parse_qs, urlparse
-
-                parsed = urlparse(next_cursor)
-                url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-                params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
-            else:
-                params["pageCursor"] = next_cursor
+            url, params = parse_pagination_cursor(next_cursor, url, params)
 
 
 class AsyncReadwiseClient:
@@ -349,39 +301,6 @@ class AsyncReadwiseClient:
     async def __aexit__(self, *args: Any) -> None:
         await self.close()
 
-    def _handle_response(self, response: httpx.Response) -> httpx.Response:
-        """Handle HTTP response and raise appropriate exceptions."""
-        if response.is_success:
-            return response
-
-        body = response.text
-        status = response.status_code
-
-        if status == 401:
-            raise AuthenticationError(response_body=body)
-        elif status == 404:
-            raise NotFoundError(response_body=body)
-        elif status == 429:
-            retry_after = response.headers.get("Retry-After")
-            raise RateLimitError(
-                retry_after=int(retry_after) if retry_after else None,
-                response_body=body,
-            )
-        elif status == 400:
-            raise ValidationError(message=f"Validation error: {body}", response_body=body)
-        elif status >= 500:
-            raise ServerError(
-                message=f"Server error: {body}",
-                status_code=status,
-                response_body=body,
-            )
-        else:
-            raise ReadwiseError(
-                message=f"Unexpected error: {body}",
-                status_code=status,
-                response_body=body,
-            )
-
     async def _request(
         self,
         method: str,
@@ -397,7 +316,7 @@ class AsyncReadwiseClient:
         for attempt in range(self.max_retries + 1):
             try:
                 response = await self.client.request(method, url, params=params, json=json)
-                return self._handle_response(response)
+                return handle_response(response)
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 last_error = e
                 if attempt < self.max_retries:
@@ -472,13 +391,4 @@ class AsyncReadwiseClient:
             if not next_cursor:
                 break
 
-            # Handle both full URLs and cursor strings
-            if next_cursor.startswith("http"):
-                # Extract path and query from full URL
-                from urllib.parse import parse_qs, urlparse
-
-                parsed = urlparse(next_cursor)
-                url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-                params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
-            else:
-                params["pageCursor"] = next_cursor
+            url, params = parse_pagination_cursor(next_cursor, url, params)

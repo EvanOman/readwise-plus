@@ -266,31 +266,28 @@ class TestHighlightPusher:
         # Verify the request was made
         assert route.called
 
-    def test_truncate_field_none(self, api_key: str) -> None:
+    def test_truncate_field_none(self) -> None:
         """Test truncating None value."""
-        client = ReadwiseClient(api_key=api_key)
-        pusher = HighlightPusher(client)
+        from readwise_sdk._utils import truncate_string
 
-        value, was_truncated = pusher._truncate_field(None, 100)
+        value, was_truncated = truncate_string(None, 100)
         assert value is None
         assert was_truncated is False
 
-    def test_truncate_field_short(self, api_key: str) -> None:
+    def test_truncate_field_short(self) -> None:
         """Test truncating short value (no truncation needed)."""
-        client = ReadwiseClient(api_key=api_key)
-        pusher = HighlightPusher(client)
+        from readwise_sdk._utils import truncate_string
 
-        value, was_truncated = pusher._truncate_field("short", 100)
+        value, was_truncated = truncate_string("short", 100)
         assert value == "short"
         assert was_truncated is False
 
-    def test_truncate_field_long(self, api_key: str) -> None:
+    def test_truncate_field_long(self) -> None:
         """Test truncating long value."""
-        client = ReadwiseClient(api_key=api_key)
-        pusher = HighlightPusher(client)
+        from readwise_sdk._utils import truncate_string
 
         long_value = "x" * 200
-        value, was_truncated = pusher._truncate_field(long_value, 100)
+        value, was_truncated = truncate_string(long_value, 100)
         assert value is not None
         assert len(value) == 100
         assert value.endswith("...")

@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from readwise_sdk._utils import parse_datetime_string
+
 
 class BookCategory(str, Enum):
     """Categories for books/sources in Readwise."""
@@ -72,15 +74,7 @@ class Highlight(BaseModel):
     @classmethod
     def parse_datetime(cls, v: Any) -> datetime | None:
         """Parse datetime strings."""
-        if v is None or v == "":
-            return None
-        if isinstance(v, datetime):
-            return v
-        if isinstance(v, str):
-            # Handle Z suffix for UTC
-            v = v.replace("Z", "+00:00")
-            return datetime.fromisoformat(v)
-        return None
+        return parse_datetime_string(v)
 
 
 class Book(BaseModel):
@@ -117,14 +111,7 @@ class Book(BaseModel):
     @classmethod
     def parse_datetime(cls, v: Any) -> datetime | None:
         """Parse datetime strings."""
-        if v is None or v == "":
-            return None
-        if isinstance(v, datetime):
-            return v
-        if isinstance(v, str):
-            v = v.replace("Z", "+00:00")
-            return datetime.fromisoformat(v)
-        return None
+        return parse_datetime_string(v)
 
 
 class DailyReview(BaseModel):

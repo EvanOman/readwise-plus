@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from readwise_sdk._utils import parse_datetime_string
 from readwise_sdk.v2.models import Book, Highlight
 
 if TYPE_CHECKING:
@@ -84,20 +85,14 @@ class SyncState:
     @classmethod
     def from_dict(cls, data: dict) -> SyncState:
         """Create from dictionary."""
-
-        def parse_dt(v: str | None) -> datetime | None:
-            if v is None:
-                return None
-            return datetime.fromisoformat(v)
-
         return cls(
-            last_highlight_sync=parse_dt(data.get("last_highlight_sync")),
-            last_book_sync=parse_dt(data.get("last_book_sync")),
-            last_document_sync=parse_dt(data.get("last_document_sync")),
+            last_highlight_sync=parse_datetime_string(data.get("last_highlight_sync")),
+            last_book_sync=parse_datetime_string(data.get("last_book_sync")),
+            last_document_sync=parse_datetime_string(data.get("last_document_sync")),
             total_highlights_synced=data.get("total_highlights_synced", 0),
             total_books_synced=data.get("total_books_synced", 0),
             total_documents_synced=data.get("total_documents_synced", 0),
-            last_sync_time=parse_dt(data.get("last_sync_time")),
+            last_sync_time=parse_datetime_string(data.get("last_sync_time")),
             errors=data.get("errors", []),
         )
 

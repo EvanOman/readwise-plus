@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
+from readwise_sdk._utils import parse_datetime_string
 
 
 class DocumentLocation(str, Enum):
@@ -107,18 +110,7 @@ class Document(BaseModel):
     @classmethod
     def parse_datetime(cls, v: Any) -> datetime | None:
         """Parse datetime strings."""
-        if v is None or v == "":
-            return None
-        if isinstance(v, datetime):
-            return v
-        if isinstance(v, str):
-            # Handle Z suffix for UTC
-            v = v.replace("Z", "+00:00")
-            try:
-                return datetime.fromisoformat(v)
-            except ValueError:
-                return None
-        return None
+        return parse_datetime_string(v)
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -146,8 +138,6 @@ class Document(BaseModel):
             return v
         if isinstance(v, str):
             # Parse strings like "22 mins", "5 min", "1 minute"
-            import re
-
             match = re.match(r"(\d+)", v)
             if match:
                 return int(match.group(1))
