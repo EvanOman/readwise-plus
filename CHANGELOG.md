@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3](https://github.com/EvanOman/readwise-plus/compare/v0.1.2...v0.1.3) (2026-01-21)
+
+
+### Features
+
+* **contrib:** add AsyncBatchSync for async batch synchronization ([2a14a0c](https://github.com/EvanOman/readwise-plus/commit/2a14a0cfda5b853af7654f68708ba0b4035e6997))
+* **contrib:** add update/delete methods to HighlightPusher ([7ea8723](https://github.com/EvanOman/readwise-plus/commit/7ea8723290970e2870de2687971c56021dd26310))
+
+
+### Documentation
+
+* add async support documentation ([99c24a4](https://github.com/EvanOman/readwise-plus/commit/99c24a46906ef03099d907e0d2d0aae148ad8c6d))
+* add documentation for HighlightCreate, HighlightUpdate, and CRUD methods ([d62010a](https://github.com/EvanOman/readwise-plus/commit/d62010a32f6450c8ddf0161efd4c06308f53f004))
+
 ## [0.1.2](https://github.com/EvanOman/readwise-plus/compare/v0.1.1...v0.1.2) (2026-01-20)
 
 
