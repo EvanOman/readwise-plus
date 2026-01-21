@@ -400,9 +400,7 @@ class AsyncBatchSync:
         *,
         on_item: Callable[[Highlight], None] | Callable[[Highlight], Awaitable[None]] | None = None,
         on_batch: (
-            Callable[[list[Highlight]], None]
-            | Callable[[list[Highlight]], Awaitable[None]]
-            | None
+            Callable[[list[Highlight]], None] | Callable[[list[Highlight]], Awaitable[None]] | None
         ) = None,
         full_sync: bool = False,
     ) -> BatchSyncResult:
