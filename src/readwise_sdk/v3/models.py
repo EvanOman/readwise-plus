@@ -211,6 +211,7 @@ class DocumentUpdate(BaseModel):
     location: DocumentLocation | None = None
     category: DocumentCategory | None = None
     tags: list[str] | None = None
+    notes: str | None = None
 
     model_config = {"extra": "ignore"}
 
@@ -234,6 +235,8 @@ class DocumentUpdate(BaseModel):
             data["category"] = self.category.value
         if self.tags is not None:
             data["tags"] = self.tags
+        if self.notes is not None:
+            data["notes"] = self.notes
 
         return data
 
