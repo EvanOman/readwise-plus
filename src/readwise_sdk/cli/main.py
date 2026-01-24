@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 try:
@@ -66,7 +66,7 @@ def list_highlights(
 
     since = None
     if days:
-        since = datetime.now(UTC) - timedelta(days=days)
+        since = datetime.now(timezone.utc) - timedelta(days=days)
 
     highlights = []
     for i, h in enumerate(client.v2.list_highlights(book_id=book_id, updated_after=since)):
@@ -143,7 +143,7 @@ def export_highlights(
 
     if days:
         content = builder.create_custom_digest(
-            since=datetime.now(UTC) - timedelta(days=days),
+            since=datetime.now(timezone.utc) - timedelta(days=days),
             output_format=fmt,
         )
     else:

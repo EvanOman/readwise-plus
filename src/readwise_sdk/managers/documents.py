@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from readwise_sdk.v3.models import Document, DocumentCategory, DocumentLocation
@@ -82,9 +82,9 @@ class DocumentManager:
         """
         if since is None:
             if days is not None:
-                since = datetime.now(UTC) - timedelta(days=days)
+                since = datetime.now(timezone.utc) - timedelta(days=days)
             elif hours is not None:
-                since = datetime.now(UTC) - timedelta(hours=hours)
+                since = datetime.now(timezone.utc) - timedelta(hours=hours)
             else:
                 raise ValueError("Must specify days, hours, or since")
 
@@ -227,7 +227,7 @@ class DocumentManager:
         if inbox:
             sorted_inbox = sorted(
                 inbox,
-                key=lambda d: d.created_at or datetime.min.replace(tzinfo=UTC),
+                key=lambda d: d.created_at or datetime.min.replace(tzinfo=timezone.utc),
             )
             oldest = sorted_inbox[0]
             newest = sorted_inbox[-1]

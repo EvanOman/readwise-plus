@@ -6,7 +6,7 @@ import json
 import signal
 import threading
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -160,7 +160,7 @@ class BackgroundPoller:
         """Perform a single poll operation."""
         from readwise_sdk.managers.sync import SyncResult as SR
 
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         result = SR(sync_time=now)
 
         if self._config.include_highlights:
@@ -195,7 +195,7 @@ class BackgroundPoller:
                 result = self._do_poll()
 
                 with self._lock:
-                    self._state.last_poll_time = datetime.now(UTC)
+                    self._state.last_poll_time = datetime.now(timezone.utc)
                     self._state.poll_count += 1
                     self._consecutive_errors = 0
                     self._current_backoff = self._config.poll_interval
@@ -274,7 +274,7 @@ class BackgroundPoller:
             SyncResult with fetched data.
         """
         result = self._do_poll()
-        self._state.last_poll_time = datetime.now(UTC)
+        self._state.last_poll_time = datetime.now(timezone.utc)
         self._state.poll_count += 1
         self._save_state()
         self._notify_callbacks(result)

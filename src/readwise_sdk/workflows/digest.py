@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from io import StringIO
 from typing import TYPE_CHECKING
@@ -54,7 +54,7 @@ class DigestBuilder:
         Returns:
             Formatted digest string.
         """
-        since = datetime.now(UTC) - timedelta(days=1)
+        since = datetime.now(timezone.utc) - timedelta(days=1)
         highlights = self._get_highlights_since(since)
         return self._format_digest(
             highlights,
@@ -78,7 +78,7 @@ class DigestBuilder:
         Returns:
             Formatted digest string.
         """
-        since = datetime.now(UTC) - timedelta(days=7)
+        since = datetime.now(timezone.utc) - timedelta(days=7)
         highlights = self._get_highlights_since(since)
         return self._format_digest(
             highlights,
@@ -274,7 +274,7 @@ class DigestBuilder:
         """Format as JSON."""
         data = {
             "title": title,
-            "generated_at": datetime.now(UTC).isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "count": len(highlights),
             "highlights": [
                 {

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -67,9 +67,9 @@ class AsyncHighlightManager:
         """
         if since is None:
             if days is not None:
-                since = datetime.now(UTC) - timedelta(days=days)
+                since = datetime.now(timezone.utc) - timedelta(days=days)
             elif hours is not None:
-                since = datetime.now(UTC) - timedelta(hours=hours)
+                since = datetime.now(timezone.utc) - timedelta(hours=hours)
             else:
                 raise ValueError("Must specify days, hours, or since")
 
@@ -301,12 +301,12 @@ class AsyncBookManager:
         """
         since = None
         if days is not None:
-            since = datetime.now(UTC) - timedelta(days=days)
+            since = datetime.now(timezone.utc) - timedelta(days=days)
 
         books = [b async for b in self._client.v2.list_books(updated_after=since)]
 
         books.sort(
-            key=lambda b: b.last_highlight_at or datetime.min.replace(tzinfo=UTC),
+            key=lambda b: b.last_highlight_at or datetime.min.replace(tzinfo=timezone.utc),
             reverse=True,
         )
 
@@ -444,9 +444,9 @@ class AsyncDocumentManager:
         """
         if since is None:
             if days is not None:
-                since = datetime.now(UTC) - timedelta(days=days)
+                since = datetime.now(timezone.utc) - timedelta(days=days)
             elif hours is not None:
-                since = datetime.now(UTC) - timedelta(hours=hours)
+                since = datetime.now(timezone.utc) - timedelta(hours=hours)
             else:
                 raise ValueError("Must specify days, hours, or since")
 
@@ -587,7 +587,7 @@ class AsyncDocumentManager:
         if inbox:
             sorted_inbox = sorted(
                 inbox,
-                key=lambda d: d.created_at or datetime.min.replace(tzinfo=UTC),
+                key=lambda d: d.created_at or datetime.min.replace(tzinfo=timezone.utc),
             )
             oldest = sorted_inbox[0]
             newest = sorted_inbox[-1]
@@ -701,7 +701,7 @@ class AsyncSyncManager:
         Returns:
             SyncResult with all synced data.
         """
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         result = SyncResult(sync_time=now)
 
         if include_highlights:
@@ -740,7 +740,7 @@ class AsyncSyncManager:
         Returns:
             SyncResult with newly synced data.
         """
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         result = SyncResult(sync_time=now)
 
         if include_highlights:

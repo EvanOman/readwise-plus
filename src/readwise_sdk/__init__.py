@@ -29,6 +29,7 @@ from readwise_sdk.v2 import (
 from readwise_sdk.v3 import (
     Document,
     DocumentCategory,
+    DocumentCreate,
     DocumentLocation,
     DocumentTag,
 )
@@ -63,6 +64,7 @@ __all__ = [
     # V3 Models
     "Document",
     "DocumentCategory",
+    "DocumentCreate",
     "DocumentLocation",
     "DocumentTag",
     # Managers

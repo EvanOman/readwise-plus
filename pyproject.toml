@@ -3,7 +3,7 @@ name = "readwise-plus"
 version = "0.1.3"
 description = "Comprehensive Python SDK for Readwise with high-level workflow abstractions. Supports V2 (highlights/books) and V3 (Reader) APIs with managers, workflows, and CLI."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Evan Oman" }]
 keywords = ["readwise", "highlights", "reader", "api", "sdk", "workflows", "digest"]

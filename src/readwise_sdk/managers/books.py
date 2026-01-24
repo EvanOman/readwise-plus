@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from readwise_sdk.v2.models import Book, BookCategory, Highlight
@@ -105,13 +105,13 @@ class BookManager:
         """
         since = None
         if days is not None:
-            since = datetime.now(UTC) - timedelta(days=days)
+            since = datetime.now(timezone.utc) - timedelta(days=days)
 
         books = list(self._client.v2.list_books(updated_after=since))
 
         # Sort by last_highlight_at descending
         books.sort(
-            key=lambda b: b.last_highlight_at or datetime.min.replace(tzinfo=UTC),
+            key=lambda b: b.last_highlight_at or datetime.min.replace(tzinfo=timezone.utc),
             reverse=True,
         )
 

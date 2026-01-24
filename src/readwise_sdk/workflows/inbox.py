@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from readwise_sdk.v3.models import Document, DocumentCategory, DocumentLocation
@@ -101,7 +101,7 @@ class ReadingInbox:
         reading_list = list(self._client.v3.get_reading_list())
 
         all_unread = inbox + reading_list
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
 
         # Calculate ages
         ages_days = []
@@ -189,7 +189,7 @@ class ReadingInbox:
         Returns:
             List of stale documents.
         """
-        cutoff = datetime.now(UTC) - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         results = []
 
         docs = self._client.v3.list_documents(location=location)
@@ -286,7 +286,7 @@ class ReadingInbox:
             # Age (newer is higher priority, so negative days)
             age_days = 0
             if doc.created_at:
-                age_days = (datetime.now(UTC) - doc.created_at).days
+                age_days = (datetime.now(timezone.utc) - doc.created_at).days
 
             # Title length as proxy for complexity (shorter is higher priority)
             title_len = len(doc.title) if doc.title else 0
@@ -348,7 +348,7 @@ def create_old_item_rule(days: int = 90) -> ArchiveRule:
     def condition(doc: Document) -> bool:
         if not doc.created_at:
             return False
-        age = (datetime.now(UTC) - doc.created_at).days
+        age = (datetime.now(timezone.utc) - doc.created_at).days
         return age > days
 
     return ArchiveRule(name=f"older_than_{days}_days", condition=condition)
