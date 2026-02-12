@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4](https://github.com/EvanOman/readwise-plus/compare/v0.1.3...v0.1.4) (2026-02-12)
+
+
+### Features
+
+* add notes field to DocumentUpdate model ([c4ba4cd](https://github.com/EvanOman/readwise-plus/commit/c4ba4cddd1d8f78df8ade586a42593abaab2c687))
+
+
+### Bug Fixes
+
+* format batch_sync.py for CI ([de2667d](https://github.com/EvanOman/readwise-plus/commit/de2667deb47b61f129b2c28626ecf1104f2e1537))
+* support Python 3.10+ instead of requiring 3.12+ ([d8f7b5f](https://github.com/EvanOman/readwise-plus/commit/d8f7b5fd7d3688e722a421b8578184b98597e737))
+
+
+### Reverts
+
+* restore Python 3.12+ requirement ([2e52079](https://github.com/EvanOman/readwise-plus/commit/2e52079b7c3e57425aed06c2de5016ca5a7a6899))
+* undo manual version bump, let release-please manage versioning ([a506543](https://github.com/EvanOman/readwise-plus/commit/a506543fe933ad6f09b7ea74bfa1b7cd13114316))
+
+
+### Documentation
+
+* add AsyncBatchSync documentation ([a580084](https://github.com/EvanOman/readwise-plus/commit/a5800846826952934aba980ebf428284fc0e6aee))
+
 ## [0.1.3](https://github.com/EvanOman/readwise-plus/compare/v0.1.2...v0.1.3) (2026-01-21)
 
 
