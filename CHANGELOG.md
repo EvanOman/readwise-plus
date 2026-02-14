@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5](https://github.com/EvanOman/readwise-plus/compare/v0.1.4...v0.1.5) (2026-02-14)
+
+
+### Features
+
+* **client:** add create_optional() factory and is_configured property for deferred validation ([61096af](https://github.com/EvanOman/readwise-plus/commit/61096af4fe3430dbe15753ab1bd6049d26648573)), closes [#29](https://github.com/EvanOman/readwise-plus/issues/29)
+* **contrib:** add AsyncDocumentImporter for async document operations ([196fa7a](https://github.com/EvanOman/readwise-plus/commit/196fa7a99c30117ce7e76147aa4050226e022f4d)), closes [#32](https://github.com/EvanOman/readwise-plus/issues/32)
+* **contrib:** add detailed TruncationInfo to PushResult for field-level truncation tracking ([166fda1](https://github.com/EvanOman/readwise-plus/commit/166fda1750ac4d3ffc08df4c6d8c845876985c4e)), closes [#26](https://github.com/EvanOman/readwise-plus/issues/26)
+* **contrib:** add sync_documents() method to BatchSync ([bddf77e](https://github.com/EvanOman/readwise-plus/commit/bddf77e2df99984033271e4002c9e5a0ea73703b)), closes [#31](https://github.com/EvanOman/readwise-plus/issues/31)
+* **contrib:** default category to None in SimpleHighlight and push() to let API decide ([24cf6fa](https://github.com/EvanOman/readwise-plus/commit/24cf6fae2b5cbeb4faa172f159e32d519f690d34)), closes [#25](https://github.com/EvanOman/readwise-plus/issues/25)
+
+
+### Bug Fixes
+
+* **client:** use dynamic version from package metadata instead of hardcoded value ([6e5a344](https://github.com/EvanOman/readwise-plus/commit/6e5a34463fb1df6f35f8e613186bda850cc447ce)), closes [#27](https://github.com/EvanOman/readwise-plus/issues/27)
+
+
+### Documentation
+
+* add merge strategy guidance for release-please compatibility ([06181a3](https://github.com/EvanOman/readwise-plus/commit/06181a3ff0e4ec457e3be182f4eb9254d6260860))
+
 ## [0.1.4](https://github.com/EvanOman/readwise-plus/compare/v0.1.3...v0.1.4) (2026-02-12)
 
 
