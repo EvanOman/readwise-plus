@@ -55,7 +55,7 @@ class SimpleHighlight:
     author: str | None = None
     source_url: str | None = None
     source_type: str = "readwise_sdk"
-    category: BookCategory = BookCategory.ARTICLES
+    category: BookCategory | None = None
     note: str | None = None
     location: int | None = None
     location_type: str | None = None
@@ -213,7 +213,7 @@ class HighlightPusher:
         author: str | None = None,
         source_url: str | None = None,
         source_type: str = "readwise_sdk",
-        category: BookCategory = BookCategory.ARTICLES,
+        category: BookCategory | None = None,
         note: str | None = None,
         location: int | None = None,
         highlighted_at: datetime | None = None,
@@ -227,7 +227,8 @@ class HighlightPusher:
             author: Author of the source.
             source_url: URL of the source.
             source_type: Type identifier for the source.
-            category: Category (articles, books, tweets, etc.).
+            category: Category (articles, books, tweets, etc.). Defaults to None
+                to let the Readwise API decide.
             note: Note attached to the highlight.
             location: Location in the source (page number, etc.).
             highlighted_at: When the highlight was made.
@@ -483,7 +484,7 @@ class AsyncHighlightPusher:
         author: str | None = None,
         source_url: str | None = None,
         source_type: str = "readwise_sdk",
-        category: BookCategory = BookCategory.ARTICLES,
+        category: BookCategory | None = None,
         note: str | None = None,
         location: int | None = None,
         highlighted_at: datetime | None = None,
@@ -497,7 +498,8 @@ class AsyncHighlightPusher:
             author: Author of the source.
             source_url: URL of the source.
             source_type: Type identifier for the source.
-            category: Category (articles, books, tweets, etc.).
+            category: Category (articles, books, tweets, etc.). Defaults to None
+                to let the Readwise API decide.
             note: Note attached to the highlight.
             location: Location in the source (page number, etc.).
             highlighted_at: When the highlight was made.

@@ -29,7 +29,7 @@ class TestSimpleHighlight:
         assert h.text == "Test text"
         assert h.title == "Test Title"
         assert h.author is None
-        assert h.category == BookCategory.ARTICLES
+        assert h.category is None
 
     def test_full_highlight(self) -> None:
         """Test creating a full highlight with all fields."""

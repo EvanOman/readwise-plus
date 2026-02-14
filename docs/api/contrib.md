@@ -87,7 +87,7 @@ class SimpleHighlight:
     author: str | None = None
     source_url: str | None = None
     source_type: str = "readwise_sdk"
-    category: BookCategory = BookCategory.ARTICLES
+    category: BookCategory | None = None
     note: str | None = None
     location: int | None = None
     location_type: str | None = None
