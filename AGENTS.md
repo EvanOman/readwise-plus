@@ -55,6 +55,25 @@ chore(deps): update pydantic to 2.10
 2. **Use conventional commit format** - required for Release Please
 3. **Don't skip pre-commit checks**
 
+## Merging Feature Branches and Worktrees
+
+**CRITICAL: Release Please only scans first-parent commits on `main`.** Regular merge commits (e.g., "Merge branch 'feature-x'") are invisible to Release Please and will NOT trigger version bumps or changelog entries.
+
+**Use cherry-pick or squash merge — never regular merge.**
+
+```bash
+# CORRECT: Cherry-pick preserves the conventional commit message
+git cherry-pick <commit-sha>
+
+# CORRECT: Squash merge with a conventional commit message
+git merge --squash feature-branch
+git commit -m "feat(scope): description"
+
+# WRONG: Regular merge creates a non-conventional merge commit
+git merge feature-branch           # Release Please can't see this
+git merge --no-edit feature-branch  # Release Please can't see this
+```
+
 ## Project Architecture
 
 ```

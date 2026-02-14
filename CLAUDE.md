@@ -139,6 +139,33 @@ Releases are automated via Release Please:
 3. When release PR is merged, a GitHub Release is created
 4. The `publish` workflow automatically publishes to PyPI
 
+## Merging Feature Branches and Worktrees
+
+**Release Please only scans first-parent commits on `main`.** This means merge commits like "Merge branch 'feature-x'" are invisible to the release automation. You must use one of these strategies:
+
+### Preferred: Cherry-pick (for worktree workflows)
+
+```bash
+# After work is done on a worktree/feature branch:
+git cherry-pick <commit-sha>   # Preserves the original conventional commit message
+```
+
+### Alternative: Squash merge
+
+```bash
+git merge --squash feature-branch
+git commit -m "feat(scope): description of the change"
+```
+
+### Never use
+
+```bash
+# DO NOT use regular merge - the merge commit message won't follow conventional commits
+# and Release Please will not detect the changes:
+git merge feature-branch           # Bad
+git merge --no-edit feature-branch  # Bad
+```
+
 ## Code Style
 
 - Python 3.12+
