@@ -9,7 +9,12 @@ import httpx
 import pytest
 import respx
 
-from readwise_sdk.client import READWISE_API_V2_BASE, AsyncReadwiseClient, ReadwiseClient
+from readwise_sdk.client import (
+    READWISE_API_V2_BASE,
+    READWISE_API_V3_BASE,
+    AsyncReadwiseClient,
+    ReadwiseClient,
+)
 from readwise_sdk.contrib.batch_sync import (
     AsyncBatchSync,
     BatchSync,
@@ -18,6 +23,7 @@ from readwise_sdk.contrib.batch_sync import (
     SyncState,
 )
 from readwise_sdk.v2.models import Book, Highlight
+from readwise_sdk.v3.models import Document
 
 
 class TestSyncState:
@@ -306,7 +312,7 @@ class TestBatchSync:
 
     @respx.mock
     def test_sync_all(self, api_key: str) -> None:
-        """Test syncing both highlights and books."""
+        """Test syncing highlights, books, and documents."""
         respx.get(f"{READWISE_API_V2_BASE}/highlights/").mock(
             return_value=httpx.Response(
                 200,
@@ -319,16 +325,29 @@ class TestBatchSync:
                 json={"results": [{"id": 1, "title": "B1"}], "next": None},
             )
         )
+        respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": "doc1", "url": "https://example.com/1", "title": "Doc 1"},
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
 
         client = ReadwiseClient(api_key=api_key)
         sync = BatchSync(client)
 
-        h_result, b_result = sync.sync_all()
+        h_result, b_result, d_result = sync.sync_all()
 
         assert h_result.success is True
         assert h_result.new_items == 1
         assert b_result.success is True
         assert b_result.new_items == 1
+        assert d_result.success is True
+        assert d_result.new_items == 1
 
     @respx.mock
     def test_incremental_sync(self, api_key: str) -> None:
@@ -597,6 +616,231 @@ class TestBatchSync:
         sync.sync_highlights(full_sync=True)
         assert sync.state.total_highlights_synced == 2
 
+    @respx.mock
+    def test_sync_documents(self, api_key: str) -> None:
+        """Test syncing documents."""
+        respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": "doc1", "url": "https://example.com/1", "title": "Doc 1"},
+                        {"id": "doc2", "url": "https://example.com/2", "title": "Doc 2"},
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
+
+        client = ReadwiseClient(api_key=api_key)
+        sync = BatchSync(client)
+
+        result = sync.sync_documents()
+
+        assert result.success is True
+        assert result.new_items == 2
+        assert sync.state.total_documents_synced == 2
+
+    @respx.mock
+    def test_sync_documents_with_callback(self, api_key: str) -> None:
+        """Test syncing documents with item callback."""
+        respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": "doc1", "url": "https://example.com/1", "title": "Doc 1"},
+                        {"id": "doc2", "url": "https://example.com/2", "title": "Doc 2"},
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
+
+        client = ReadwiseClient(api_key=api_key)
+        sync = BatchSync(client)
+
+        received_documents: list[Document] = []
+
+        def on_item(d: Document) -> None:
+            received_documents.append(d)
+
+        result = sync.sync_documents(on_item=on_item)
+
+        assert result.success is True
+        assert len(received_documents) == 2
+        assert received_documents[0].id == "doc1"
+
+    @respx.mock
+    def test_sync_documents_with_batch_callback(self, api_key: str) -> None:
+        """Test syncing documents with batch callback."""
+        respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": f"doc{i}", "url": f"https://example.com/{i}", "title": f"D{i}"}
+                        for i in range(150)
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
+
+        client = ReadwiseClient(api_key=api_key)
+        config = BatchSyncConfig(batch_size=50)
+        sync = BatchSync(client, config=config)
+
+        batches: list[int] = []
+
+        def on_batch(b: list[Document]) -> None:
+            batches.append(len(b))
+
+        result = sync.sync_documents(on_batch=on_batch)
+
+        assert result.success is True
+        assert result.new_items == 150
+        # Should have had batches of 50 + 50 + 50
+        assert len(batches) == 3
+        assert batches[0] == 50
+
+    @respx.mock
+    def test_sync_documents_incremental(self, api_key: str) -> None:
+        """Test incremental document sync uses last sync time."""
+        route = respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": "doc1", "url": "https://example.com/1", "title": "Doc 1"},
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
+
+        client = ReadwiseClient(api_key=api_key)
+        sync = BatchSync(client)
+
+        # First sync
+        sync.sync_documents()
+
+        # Second sync should be incremental
+        sync.sync_documents()
+
+        # Check that updatedAfter was used in second request
+        last_request = route.calls.last.request
+        assert "updatedAfter" in str(last_request.url)
+
+    @respx.mock
+    def test_sync_documents_full_sync(self, api_key: str) -> None:
+        """Test full document sync ignores last sync time."""
+        route = respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": "doc1", "url": "https://example.com/1", "title": "Doc 1"},
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
+
+        client = ReadwiseClient(api_key=api_key)
+        sync = BatchSync(client)
+
+        # First sync
+        sync.sync_documents()
+
+        # Full sync should not use updatedAfter
+        sync.sync_documents(full_sync=True)
+
+        # Check request
+        last_request = route.calls.last.request
+        assert "updatedAfter" not in str(last_request.url)
+
+    @respx.mock
+    def test_sync_all_includes_documents(self, api_key: str) -> None:
+        """Test syncing highlights, books, and documents."""
+        respx.get(f"{READWISE_API_V2_BASE}/highlights/").mock(
+            return_value=httpx.Response(
+                200,
+                json={"results": [{"id": 1, "text": "H1"}], "next": None},
+            )
+        )
+        respx.get(f"{READWISE_API_V2_BASE}/books/").mock(
+            return_value=httpx.Response(
+                200,
+                json={"results": [{"id": 1, "title": "B1"}], "next": None},
+            )
+        )
+        respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": "doc1", "url": "https://example.com/1", "title": "Doc 1"},
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
+
+        client = ReadwiseClient(api_key=api_key)
+        sync = BatchSync(client)
+
+        h_result, b_result, d_result = sync.sync_all()
+
+        assert h_result.success is True
+        assert h_result.new_items == 1
+        assert b_result.success is True
+        assert b_result.new_items == 1
+        assert d_result.success is True
+        assert d_result.new_items == 1
+
+    @respx.mock
+    def test_get_stats_includes_documents(self, api_key: str) -> None:
+        """Test getting sync statistics includes document stats."""
+        respx.get(f"{READWISE_API_V2_BASE}/highlights/").mock(
+            return_value=httpx.Response(
+                200,
+                json={"results": [{"id": i, "text": f"H{i}"} for i in range(5)], "next": None},
+            )
+        )
+        respx.get(f"{READWISE_API_V2_BASE}/books/").mock(
+            return_value=httpx.Response(
+                200,
+                json={"results": [{"id": i, "title": f"B{i}"} for i in range(3)], "next": None},
+            )
+        )
+        respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": f"doc{i}", "url": f"https://example.com/{i}", "title": f"D{i}"}
+                        for i in range(4)
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
+
+        client = ReadwiseClient(api_key=api_key)
+        sync = BatchSync(client)
+
+        sync.sync_highlights()
+        sync.sync_books()
+        sync.sync_documents()
+
+        stats = sync.get_stats()
+
+        assert stats["total_highlights_synced"] == 5
+        assert stats["total_books_synced"] == 3
+        assert stats["total_documents_synced"] == 4
+        assert stats["error_count"] == 0
+
 
 class TestAsyncBatchSync:
     """Tests for AsyncBatchSync class."""
@@ -715,7 +959,7 @@ class TestAsyncBatchSync:
     @respx.mock
     @pytest.mark.asyncio
     async def test_sync_all(self, api_key: str) -> None:
-        """Test async syncing both highlights and books."""
+        """Test async syncing highlights, books, and documents."""
         respx.get(f"{READWISE_API_V2_BASE}/highlights/").mock(
             return_value=httpx.Response(
                 200,
@@ -734,15 +978,28 @@ class TestAsyncBatchSync:
                 },
             )
         )
+        respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": "doc1", "url": "https://example.com/1", "title": "Doc 1"},
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
 
         async with AsyncReadwiseClient(api_key=api_key) as client:
             sync = AsyncBatchSync(client)
-            h_result, b_result = await sync.sync_all()
+            h_result, b_result, d_result = await sync.sync_all()
 
             assert h_result.success is True
             assert b_result.success is True
+            assert d_result.success is True
             assert h_result.new_items == 1
             assert b_result.new_items == 1
+            assert d_result.new_items == 1
 
     @respx.mock
     @pytest.mark.asyncio
@@ -795,3 +1052,146 @@ class TestAsyncBatchSync:
         sync.reset_state()
 
         assert sync.state.total_highlights_synced == 0
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_sync_documents(self, api_key: str) -> None:
+        """Test async syncing documents."""
+        respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": "doc1", "url": "https://example.com/1", "title": "Doc 1"},
+                        {"id": "doc2", "url": "https://example.com/2", "title": "Doc 2"},
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
+
+        async with AsyncReadwiseClient(api_key=api_key) as client:
+            sync = AsyncBatchSync(client)
+            result = await sync.sync_documents()
+
+            assert result.success is True
+            assert result.new_items == 2
+            assert sync.state.total_documents_synced == 2
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_sync_documents_with_sync_callback(self, api_key: str) -> None:
+        """Test async syncing documents with synchronous callback."""
+        respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": "doc1", "url": "https://example.com/1", "title": "Doc 1"},
+                        {"id": "doc2", "url": "https://example.com/2", "title": "Doc 2"},
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
+
+        async with AsyncReadwiseClient(api_key=api_key) as client:
+            sync = AsyncBatchSync(client)
+
+            received_documents: list[Document] = []
+
+            def on_item(d: Document) -> None:
+                received_documents.append(d)
+
+            result = await sync.sync_documents(on_item=on_item)
+
+            assert result.success is True
+            assert len(received_documents) == 2
+            assert received_documents[0].id == "doc1"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_sync_documents_with_async_callback(self, api_key: str) -> None:
+        """Test async syncing documents with async callback."""
+        respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": "doc1", "url": "https://example.com/1", "title": "Doc 1"},
+                        {"id": "doc2", "url": "https://example.com/2", "title": "Doc 2"},
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
+
+        async with AsyncReadwiseClient(api_key=api_key) as client:
+            sync = AsyncBatchSync(client)
+
+            received_documents: list[Document] = []
+
+            async def on_item(d: Document) -> None:
+                received_documents.append(d)
+
+            result = await sync.sync_documents(on_item=on_item)
+
+            assert result.success is True
+            assert len(received_documents) == 2
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_sync_all_includes_documents(self, api_key: str) -> None:
+        """Test async syncing highlights, books, and documents."""
+        respx.get(f"{READWISE_API_V2_BASE}/highlights/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [{"id": 1, "text": "H1"}],
+                    "next": None,
+                },
+            )
+        )
+        respx.get(f"{READWISE_API_V2_BASE}/books/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [{"id": 1, "title": "B1"}],
+                    "next": None,
+                },
+            )
+        )
+        respx.get(f"{READWISE_API_V3_BASE}/list/").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": "doc1", "url": "https://example.com/1", "title": "Doc 1"},
+                    ],
+                    "nextPageCursor": None,
+                },
+            )
+        )
+
+        async with AsyncReadwiseClient(api_key=api_key) as client:
+            sync = AsyncBatchSync(client)
+            h_result, b_result, d_result = await sync.sync_all()
+
+            assert h_result.success is True
+            assert b_result.success is True
+            assert d_result.success is True
+            assert h_result.new_items == 1
+            assert b_result.new_items == 1
+            assert d_result.new_items == 1
+
+    def test_get_stats_includes_documents(self, api_key: str) -> None:
+        """Test getting stats includes document fields."""
+        client = AsyncReadwiseClient(api_key=api_key)
+        sync = AsyncBatchSync(client)
+
+        stats = sync.get_stats()
+
+        assert stats["total_highlights_synced"] == 0
+        assert stats["total_books_synced"] == 0
+        assert stats["total_documents_synced"] == 0
+        assert stats["error_count"] == 0

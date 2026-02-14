@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING
 
 from readwise_sdk._utils import parse_datetime_string
 from readwise_sdk.v2.models import Book, Highlight
+from readwise_sdk.v3.models import Document
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -288,26 +289,94 @@ class BatchSync:
 
         return result
 
+    def sync_documents(
+        self,
+        *,
+        on_item: Callable[[Document], None] | None = None,
+        on_batch: Callable[[list[Document]], None] | None = None,
+        full_sync: bool = False,
+    ) -> BatchSyncResult:
+        """Sync documents from Readwise Reader.
+
+        Args:
+            on_item: Callback for each document.
+            on_batch: Callback for each batch of documents.
+            full_sync: If True, sync all documents. If False, sync since last sync.
+
+        Returns:
+            BatchSyncResult with sync statistics.
+        """
+        now = datetime.now(UTC)
+        result = BatchSyncResult(success=True, sync_time=now)
+
+        since = None if full_sync else self._state.last_document_sync
+
+        batch: list[Document] = []
+
+        try:
+            for document in self._client.v3.list_documents(updated_after=since):
+                try:
+                    if on_item:
+                        on_item(document)
+
+                    batch.append(document)
+                    result.new_items += 1
+
+                    # Process batch when full
+                    if len(batch) >= self._config.batch_size:
+                        if on_batch:
+                            on_batch(batch)
+                        batch = []
+
+                except Exception as e:
+                    result.failed_items += 1
+                    error_msg = f"Error processing document {document.id}: {e}"
+                    result.errors.append(error_msg)
+                    self._state.errors.append(error_msg)
+
+                    if not self._config.continue_on_error:
+                        result.success = False
+                        break
+
+            # Process remaining batch
+            if batch and on_batch:
+                on_batch(batch)
+
+            # Update state
+            self._state.last_document_sync = now
+            self._state.total_documents_synced += result.new_items
+            self._state.last_sync_time = now
+            self._save_state()
+
+        except Exception as e:
+            result.success = False
+            result.errors.append(f"Sync failed: {e}")
+
+        return result
+
     def sync_all(
         self,
         *,
         on_highlight: Callable[[Highlight], None] | None = None,
         on_book: Callable[[Book], None] | None = None,
+        on_document: Callable[[Document], None] | None = None,
         full_sync: bool = False,
-    ) -> tuple[BatchSyncResult, BatchSyncResult]:
-        """Sync both highlights and books.
+    ) -> tuple[BatchSyncResult, BatchSyncResult, BatchSyncResult]:
+        """Sync highlights, books, and documents.
 
         Args:
             on_highlight: Callback for each highlight.
             on_book: Callback for each book.
+            on_document: Callback for each document.
             full_sync: If True, sync all data.
 
         Returns:
-            Tuple of (highlight_result, book_result).
+            Tuple of (highlight_result, book_result, document_result).
         """
         highlight_result = self.sync_highlights(on_item=on_highlight, full_sync=full_sync)
         book_result = self.sync_books(on_item=on_book, full_sync=full_sync)
-        return highlight_result, book_result
+        document_result = self.sync_documents(on_item=on_document, full_sync=full_sync)
+        return highlight_result, book_result, document_result
 
     def reset_state(self) -> None:
         """Reset sync state (next sync will be full sync)."""
@@ -323,8 +392,10 @@ class BatchSync:
         return {
             "last_highlight_sync": self._state.last_highlight_sync,
             "last_book_sync": self._state.last_book_sync,
+            "last_document_sync": self._state.last_document_sync,
             "total_highlights_synced": self._state.total_highlights_synced,
             "total_books_synced": self._state.total_books_synced,
+            "total_documents_synced": self._state.total_documents_synced,
             "error_count": len(self._state.errors),
             "last_sync_time": self._state.last_sync_time,
         }
@@ -545,6 +616,81 @@ class AsyncBatchSync:
 
         return result
 
+    async def sync_documents(
+        self,
+        *,
+        on_item: (Callable[[Document], None] | Callable[[Document], Awaitable[None]] | None) = None,
+        on_batch: (
+            Callable[[list[Document]], None] | Callable[[list[Document]], Awaitable[None]] | None
+        ) = None,
+        full_sync: bool = False,
+    ) -> BatchSyncResult:
+        """Sync documents from Readwise Reader asynchronously.
+
+        Args:
+            on_item: Callback for each document (can be sync or async).
+            on_batch: Callback for each batch of documents (can be sync or async).
+            full_sync: If True, sync all documents. If False, sync since last sync.
+
+        Returns:
+            BatchSyncResult with sync statistics.
+        """
+        import inspect
+
+        now = datetime.now(UTC)
+        result = BatchSyncResult(success=True, sync_time=now)
+
+        since = None if full_sync else self._state.last_document_sync
+
+        batch: list[Document] = []
+
+        try:
+            async for document in self._client.v3.list_documents(updated_after=since):
+                try:
+                    if on_item:
+                        cb_result = on_item(document)
+                        if inspect.isawaitable(cb_result):
+                            await cb_result
+
+                    batch.append(document)
+                    result.new_items += 1
+
+                    # Process batch when full
+                    if len(batch) >= self._config.batch_size:
+                        if on_batch:
+                            batch_result = on_batch(batch)
+                            if inspect.isawaitable(batch_result):
+                                await batch_result
+                        batch = []
+
+                except Exception as e:
+                    result.failed_items += 1
+                    error_msg = f"Error processing document {document.id}: {e}"
+                    result.errors.append(error_msg)
+                    self._state.errors.append(error_msg)
+
+                    if not self._config.continue_on_error:
+                        result.success = False
+                        break
+
+            # Process remaining batch
+            if batch and on_batch:
+                batch_result = on_batch(batch)
+                if inspect.isawaitable(batch_result):
+                    await batch_result
+
+            # Update state
+            self._state.last_document_sync = now
+            self._state.total_documents_synced += result.new_items
+            self._state.last_sync_time = now
+            self._save_state()
+
+        except Exception as e:
+            result.success = False
+            result.errors.append(f"Sync failed: {e}")
+
+        return result
+
     async def sync_all(
         self,
         *,
@@ -552,21 +698,26 @@ class AsyncBatchSync:
             Callable[[Highlight], None] | Callable[[Highlight], Awaitable[None]] | None
         ) = None,
         on_book: Callable[[Book], None] | Callable[[Book], Awaitable[None]] | None = None,
+        on_document: (
+            Callable[[Document], None] | Callable[[Document], Awaitable[None]] | None
+        ) = None,
         full_sync: bool = False,
-    ) -> tuple[BatchSyncResult, BatchSyncResult]:
-        """Sync both highlights and books asynchronously.
+    ) -> tuple[BatchSyncResult, BatchSyncResult, BatchSyncResult]:
+        """Sync highlights, books, and documents asynchronously.
 
         Args:
             on_highlight: Callback for each highlight (can be sync or async).
             on_book: Callback for each book (can be sync or async).
+            on_document: Callback for each document (can be sync or async).
             full_sync: If True, sync all data.
 
         Returns:
-            Tuple of (highlight_result, book_result).
+            Tuple of (highlight_result, book_result, document_result).
         """
         highlight_result = await self.sync_highlights(on_item=on_highlight, full_sync=full_sync)
         book_result = await self.sync_books(on_item=on_book, full_sync=full_sync)
-        return highlight_result, book_result
+        document_result = await self.sync_documents(on_item=on_document, full_sync=full_sync)
+        return highlight_result, book_result, document_result
 
     def reset_state(self) -> None:
         """Reset sync state (next sync will be full sync)."""
@@ -582,8 +733,10 @@ class AsyncBatchSync:
         return {
             "last_highlight_sync": self._state.last_highlight_sync,
             "last_book_sync": self._state.last_book_sync,
+            "last_document_sync": self._state.last_document_sync,
             "total_highlights_synced": self._state.total_highlights_synced,
             "total_books_synced": self._state.total_books_synced,
+            "total_documents_synced": self._state.total_documents_synced,
             "error_count": len(self._state.errors),
             "last_sync_time": self._state.last_sync_time,
         }
