@@ -41,6 +41,8 @@ class BaseClient:
         timeout: float = DEFAULT_TIMEOUT,
         max_retries: int = DEFAULT_MAX_RETRIES,
         retry_backoff: float = DEFAULT_RETRY_BACKOFF,
+        *,
+        _defer_validation: bool = False,
     ) -> None:
         """Initialize the client.
 
@@ -49,9 +51,10 @@ class BaseClient:
             timeout: Request timeout in seconds.
             max_retries: Maximum number of retries for failed requests.
             retry_backoff: Base backoff time between retries (exponential).
+            _defer_validation: Internal flag used by create_optional(). Do not use directly.
         """
         self.api_key = api_key or os.environ.get("READWISE_API_KEY")
-        if not self.api_key:
+        if not self.api_key and not _defer_validation:
             raise AuthenticationError(
                 "API key is required. Set READWISE_API_KEY or pass api_key parameter."
             )
@@ -61,6 +64,15 @@ class BaseClient:
         self.retry_backoff = retry_backoff
 
         self._client: httpx.Client | None = None
+
+    @property
+    def is_configured(self) -> bool:
+        """Check whether the client has an API key configured.
+
+        Returns:
+            True if an API key is set, False otherwise.
+        """
+        return bool(self.api_key)
 
     @property
     def client(self) -> httpx.Client:
@@ -96,6 +108,11 @@ class BaseClient:
         json: dict[str, Any] | None = None,
     ) -> httpx.Response:
         """Make an HTTP request with retry logic."""
+        if not self.api_key:
+            raise AuthenticationError(
+                "API key is required. Set READWISE_API_KEY or pass api_key parameter."
+            )
+
         import time
 
         last_error: Exception | None = None
@@ -144,11 +161,56 @@ class ReadwiseClient(BaseClient):
         timeout: float = DEFAULT_TIMEOUT,
         max_retries: int = DEFAULT_MAX_RETRIES,
         retry_backoff: float = DEFAULT_RETRY_BACKOFF,
+        *,
+        _defer_validation: bool = False,
     ) -> None:
         """Initialize the client."""
-        super().__init__(api_key, timeout, max_retries, retry_backoff)
+        super().__init__(
+            api_key, timeout, max_retries, retry_backoff, _defer_validation=_defer_validation
+        )
         self._v2: ReadwiseV2Client | None = None
         self._v3: ReadwiseV3Client | None = None
+
+    @classmethod
+    def create_optional(
+        cls,
+        api_key: str | None = None,
+        timeout: float = DEFAULT_TIMEOUT,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        retry_backoff: float = DEFAULT_RETRY_BACKOFF,
+    ) -> ReadwiseClient:
+        """Create a client that does not raise if no API key is available.
+
+        This factory method creates a client instance even when no API key is
+        provided. Use the ``is_configured`` property to check whether the client
+        can make requests. An ``AuthenticationError`` is raised at request time
+        if the client is used without a valid key.
+
+        This is useful for optional integrations where you want to check whether
+        Readwise is configured before attempting to use it.
+
+        Example::
+
+            client = ReadwiseClient.create_optional()
+            if client.is_configured:
+                highlights = list(client.v2.list_highlights())
+
+        Args:
+            api_key: Readwise API token. If not provided, reads from READWISE_API_KEY env var.
+            timeout: Request timeout in seconds.
+            max_retries: Maximum number of retries for failed requests.
+            retry_backoff: Base backoff time between retries (exponential).
+
+        Returns:
+            A ReadwiseClient instance that may or may not be configured.
+        """
+        return cls(
+            api_key=api_key,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            _defer_validation=True,
+        )
 
     @property
     def v2(self) -> ReadwiseV2Client:
@@ -238,6 +300,8 @@ class AsyncReadwiseClient:
         timeout: float = DEFAULT_TIMEOUT,
         max_retries: int = DEFAULT_MAX_RETRIES,
         retry_backoff: float = DEFAULT_RETRY_BACKOFF,
+        *,
+        _defer_validation: bool = False,
     ) -> None:
         """Initialize the async client.
 
@@ -246,9 +310,10 @@ class AsyncReadwiseClient:
             timeout: Request timeout in seconds.
             max_retries: Maximum number of retries for failed requests.
             retry_backoff: Base backoff time between retries (exponential).
+            _defer_validation: Internal flag used by create_optional(). Do not use directly.
         """
         self.api_key = api_key or os.environ.get("READWISE_API_KEY")
-        if not self.api_key:
+        if not self.api_key and not _defer_validation:
             raise AuthenticationError(
                 "API key is required. Set READWISE_API_KEY or pass api_key parameter."
             )
@@ -260,6 +325,57 @@ class AsyncReadwiseClient:
         self._client: httpx.AsyncClient | None = None
         self._v2: AsyncReadwiseV2Client | None = None
         self._v3: AsyncReadwiseV3Client | None = None
+
+    @property
+    def is_configured(self) -> bool:
+        """Check whether the client has an API key configured.
+
+        Returns:
+            True if an API key is set, False otherwise.
+        """
+        return bool(self.api_key)
+
+    @classmethod
+    def create_optional(
+        cls,
+        api_key: str | None = None,
+        timeout: float = DEFAULT_TIMEOUT,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        retry_backoff: float = DEFAULT_RETRY_BACKOFF,
+    ) -> AsyncReadwiseClient:
+        """Create an async client that does not raise if no API key is available.
+
+        This factory method creates a client instance even when no API key is
+        provided. Use the ``is_configured`` property to check whether the client
+        can make requests. An ``AuthenticationError`` is raised at request time
+        if the client is used without a valid key.
+
+        This is useful for optional integrations where you want to check whether
+        Readwise is configured before attempting to use it.
+
+        Example::
+
+            client = AsyncReadwiseClient.create_optional()
+            if client.is_configured:
+                async for highlight in client.v2.list_highlights():
+                    print(highlight.text)
+
+        Args:
+            api_key: Readwise API token. If not provided, reads from READWISE_API_KEY env var.
+            timeout: Request timeout in seconds.
+            max_retries: Maximum number of retries for failed requests.
+            retry_backoff: Base backoff time between retries (exponential).
+
+        Returns:
+            An AsyncReadwiseClient instance that may or may not be configured.
+        """
+        return cls(
+            api_key=api_key,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            _defer_validation=True,
+        )
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -313,6 +429,11 @@ class AsyncReadwiseClient:
         json: dict[str, Any] | None = None,
     ) -> httpx.Response:
         """Make an async HTTP request with retry logic."""
+        if not self.api_key:
+            raise AuthenticationError(
+                "API key is required. Set READWISE_API_KEY or pass api_key parameter."
+            )
+
         import asyncio
 
         last_error: Exception | None = None

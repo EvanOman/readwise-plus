@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-from readwise_sdk.client import READWISE_API_V2_BASE, ReadwiseClient
+from readwise_sdk.client import READWISE_API_V2_BASE, AsyncReadwiseClient, ReadwiseClient
 from readwise_sdk.exceptions import (
     AuthenticationError,
     NotFoundError,
@@ -30,6 +30,122 @@ def test_client_with_env_api_key(mock_env_api_key: str) -> None:
     """Test client initialization with environment API key."""
     client = ReadwiseClient()
     assert client.api_key == mock_env_api_key
+
+
+class TestCreateOptional:
+    """Tests for the create_optional() factory method."""
+
+    def test_create_optional_without_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that create_optional does not raise without an API key."""
+        monkeypatch.delenv("READWISE_API_KEY", raising=False)
+        client = ReadwiseClient.create_optional()
+        assert client.api_key is None
+        assert client.is_configured is False
+
+    def test_create_optional_with_key(self, api_key: str) -> None:
+        """Test that create_optional works normally with an API key."""
+        client = ReadwiseClient.create_optional(api_key=api_key)
+        assert client.api_key == api_key
+        assert client.is_configured is True
+
+    def test_create_optional_with_env_key(self, mock_env_api_key: str) -> None:
+        """Test that create_optional reads from environment."""
+        client = ReadwiseClient.create_optional()
+        assert client.api_key == mock_env_api_key
+        assert client.is_configured is True
+
+    def test_create_optional_request_raises_without_key(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that requests fail with AuthenticationError on unconfigured client."""
+        monkeypatch.delenv("READWISE_API_KEY", raising=False)
+        client = ReadwiseClient.create_optional()
+        with pytest.raises(AuthenticationError, match="API key is required"):
+            client.get(f"{READWISE_API_V2_BASE}/highlights/")
+
+    @respx.mock
+    def test_create_optional_request_succeeds_with_key(self, api_key: str) -> None:
+        """Test that requests work normally on a configured optional client."""
+        respx.get(f"{READWISE_API_V2_BASE}/auth/").mock(return_value=httpx.Response(204))
+        client = ReadwiseClient.create_optional(api_key=api_key)
+        assert client.validate_token() is True
+
+    def test_create_optional_custom_config(self, api_key: str) -> None:
+        """Test that create_optional passes through configuration."""
+        client = ReadwiseClient.create_optional(
+            api_key=api_key, timeout=60.0, max_retries=5, retry_backoff=1.0
+        )
+        assert client.timeout == 60.0
+        assert client.max_retries == 5
+        assert client.retry_backoff == 1.0
+
+    def test_constructor_still_raises_without_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that the regular constructor still raises without an API key."""
+        monkeypatch.delenv("READWISE_API_KEY", raising=False)
+        with pytest.raises(AuthenticationError, match="API key is required"):
+            ReadwiseClient()
+
+
+class TestIsConfigured:
+    """Tests for the is_configured property."""
+
+    def test_is_configured_true(self, api_key: str) -> None:
+        """Test is_configured returns True when API key is set."""
+        client = ReadwiseClient(api_key=api_key)
+        assert client.is_configured is True
+
+    def test_is_configured_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test is_configured returns False when no API key is set."""
+        monkeypatch.delenv("READWISE_API_KEY", raising=False)
+        client = ReadwiseClient.create_optional()
+        assert client.is_configured is False
+
+
+class TestAsyncCreateOptional:
+    """Tests for AsyncReadwiseClient.create_optional()."""
+
+    def test_create_optional_without_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that async create_optional does not raise without an API key."""
+        monkeypatch.delenv("READWISE_API_KEY", raising=False)
+        client = AsyncReadwiseClient.create_optional()
+        assert client.api_key is None
+        assert client.is_configured is False
+
+    def test_create_optional_with_key(self, api_key: str) -> None:
+        """Test that async create_optional works normally with an API key."""
+        client = AsyncReadwiseClient.create_optional(api_key=api_key)
+        assert client.api_key == api_key
+        assert client.is_configured is True
+
+    def test_create_optional_with_env_key(self, mock_env_api_key: str) -> None:
+        """Test that async create_optional reads from environment."""
+        client = AsyncReadwiseClient.create_optional()
+        assert client.api_key == mock_env_api_key
+        assert client.is_configured is True
+
+    @pytest.mark.asyncio
+    async def test_create_optional_request_raises_without_key(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that async requests fail with AuthenticationError on unconfigured client."""
+        monkeypatch.delenv("READWISE_API_KEY", raising=False)
+        client = AsyncReadwiseClient.create_optional()
+        with pytest.raises(AuthenticationError, match="API key is required"):
+            await client.get(f"{READWISE_API_V2_BASE}/highlights/")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_create_optional_request_succeeds_with_key(self, api_key: str) -> None:
+        """Test that async requests work on a configured optional client."""
+        respx.get(f"{READWISE_API_V2_BASE}/auth/").mock(return_value=httpx.Response(204))
+        async with AsyncReadwiseClient.create_optional(api_key=api_key) as client:
+            assert await client.validate_token() is True
+
+    def test_constructor_still_raises_without_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that the async constructor still raises without an API key."""
+        monkeypatch.delenv("READWISE_API_KEY", raising=False)
+        with pytest.raises(AuthenticationError, match="API key is required"):
+            AsyncReadwiseClient()
 
 
 def test_client_context_manager(api_key: str) -> None:
