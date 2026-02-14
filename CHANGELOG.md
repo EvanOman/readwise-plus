@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0](https://github.com/EvanOman/readwise-plus/compare/v0.1.5...v0.2.0) (2026-02-14)
+
+
+### Features
+
+* comprehensive test suite with 97% coverage ([4a244dc](https://github.com/EvanOman/readwise-plus/commit/4a244dcded5d19d1287d5530551c6c02a4d325da))
+
+
+### Bug Fixes
+
+* **ci:** also exclude tests/conftest.py from ty type-checking ([6839d81](https://github.com/EvanOman/readwise-plus/commit/6839d8147f9341873c8a36b7244586e71d13891f))
+* **ci:** exclude test_cli.py from ty type-checking ([c1bf95c](https://github.com/EvanOman/readwise-plus/commit/c1bf95c2401ce6c024a2026edb921e50bd356218))
+* **ci:** skip CLI tests when typer is not installed ([c818d7b](https://github.com/EvanOman/readwise-plus/commit/c818d7b912754d3567be3a46c56e9de6cfee7a00))
+
 ## [0.1.5](https://github.com/EvanOman/readwise-plus/compare/v0.1.4...v0.1.5) (2026-02-14)
 
 
