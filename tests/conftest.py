@@ -1,8 +1,16 @@
 """Pytest configuration and fixtures."""
 
 import os
+from pathlib import Path
 
 import pytest
+
+collect_ignore: list[str] = []
+
+try:
+    import typer  # noqa: F401
+except ModuleNotFoundError:
+    collect_ignore.append(str(Path(__file__).parent / "test_cli.py"))
 
 
 @pytest.fixture
