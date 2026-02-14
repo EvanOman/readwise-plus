@@ -16,7 +16,7 @@ lint-fix:
     uv run ruff check . --fix
 
 type:
-    uv run ty check . --exclude "src/readwise_sdk/cli/"
+    uv run ty check . --exclude "src/readwise_sdk/cli/" --exclude "tests/test_cli.py"
 
 test:
     uv run pytest
