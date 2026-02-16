@@ -136,8 +136,36 @@ Releases are automated via Release Please:
 
 1. Merge PRs with conventional commits to `main`
 2. Release Please creates/updates a release PR
-3. When release PR is merged, a GitHub Release is created
-4. The `publish` workflow automatically publishes to PyPI
+3. When release PR is merged, a GitHub Release is created and PyPI publish runs (both in `release-please.yml`)
+
+### Version Bump Rules (pre-1.0)
+
+The config in `release-please-config.json` controls version bumps:
+
+| Commit Type | Version Bump | Example |
+|-------------|-------------|---------|
+| `fix:` | Patch | 0.2.0 → 0.2.1 |
+| `feat:` | Minor | 0.2.0 → 0.3.0 |
+| `feat!:` / `BREAKING CHANGE:` | Minor (not major) | 0.2.0 → 0.3.0 |
+
+Key settings:
+- `bump-minor-pre-major: true` — breaking changes bump minor (not major) while pre-1.0
+- `bump-patch-for-minor-pre-major: false` — feat commits bump minor (NOT patch) while pre-1.0. **Do not set this to `true`** or feat commits will only produce patch bumps
+
+### Cutting a Release
+
+1. Ensure conventional commits are on `main` (use cherry-pick or squash merge, see below)
+2. Release Please auto-creates/updates a PR (e.g., "chore(main): release X.Y.Z")
+3. Merge the release PR — this triggers both the GitHub Release and PyPI publish in one workflow
+4. The standalone `publish.yml` workflow does NOT trigger (GitHub Actions `GITHUB_TOKEN` limitation) — publishing is handled by the `publish` job inside `release-please.yml`
+
+### If Release PR Shows Wrong Version
+
+If the release PR has the wrong version bump, check `release-please-config.json` bump settings. To regenerate:
+1. Fix the config, commit, and push to `main`
+2. Close the existing release PR
+3. Trigger the Release Please workflow: `gh workflow run "Release Please"`
+4. A new PR with the corrected version will be created
 
 ## Merging Feature Branches and Worktrees
 
@@ -165,6 +193,11 @@ git commit -m "feat(scope): description of the change"
 git merge feature-branch           # Bad
 git merge --no-edit feature-branch  # Bad
 ```
+
+## CI Notes
+
+- The coverage badge is pushed to the orphan `badges` branch (not `main`) to avoid branch protection conflicts. The README references it via a raw GitHub URL. The `badges` branch must NOT have branch protection enabled.
+- The `typer` package is an optional CLI dependency (`--extra cli`). CI doesn't install it, so `tests/test_cli.py` is auto-skipped via `collect_ignore` in `tests/conftest.py`. Both `test_cli.py` and `conftest.py` are excluded from `ty` type-checking in the Justfile.
 
 ## Code Style
 

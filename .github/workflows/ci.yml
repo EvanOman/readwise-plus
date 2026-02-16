@@ -46,12 +46,18 @@ jobs:
           mkdir -p assets
           uv run genbadge coverage -i coverage.xml -o assets/coverage.svg
 
-      - name: Commit coverage badge
+      - name: Publish coverage badge
         if: matrix.python-version == '3.13' && github.ref == 'refs/heads/main'
-        continue-on-error: true
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          # Push badge to the unprotected 'badges' branch
+          cp assets/coverage.svg /tmp/coverage.svg
+          git fetch origin badges:badges 2>/dev/null || git checkout --orphan badges
+          git checkout badges
+          git rm -rf . 2>/dev/null || true
+          mkdir -p assets
+          cp /tmp/coverage.svg assets/coverage.svg
           git add assets/coverage.svg
           git diff --staged --quiet || git commit -m "chore: update coverage badge [skip ci]"
-          git push
+          git push origin badges
