@@ -84,6 +84,7 @@ def parse_pagination_cursor(
     Returns:
         Tuple of (url, params) for the next request.
     """
+    next_cursor = str(next_cursor)  # Handle integer cursors from export API
     if next_cursor.startswith("http"):
         parsed = urlparse(next_cursor)
         url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
