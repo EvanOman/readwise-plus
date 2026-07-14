@@ -19,6 +19,7 @@ Comprehensive Python SDK for [Readwise](https://readwise.io) with high-level wor
 - [Workflows](#workflows)
 - [Contrib Interfaces](#contrib-interfaces)
 - [CLI](#cli)
+- [MCP Server](#mcp-server)
 - [Development](#development)
 - [Contributing](#contributing)
 - [License](#license)
@@ -42,6 +43,12 @@ With CLI support:
 
 ```bash
 pip install readwise-plus[cli]
+```
+
+As an MCP server for AI agents:
+
+```bash
+pip install readwise-plus[mcp]
 ```
 
 ## Quick Start
@@ -407,6 +414,42 @@ readwise sync full --output-dir ./data
 # Incremental sync
 readwise sync incremental --state-file sync.json
 ```
+
+## MCP Server
+
+`readwise-plus` ships an optional [MCP](https://modelcontextprotocol.io) server that exposes Readwise and Reader operations as tools for AI agents (Claude Code, Claude Desktop, or any MCP client). It's a thin layer over the SDK — install the `mcp` extra and register the `readwise-mcp` command.
+
+### Register with Claude Code
+
+```bash
+claude mcp add readwise --env READWISE_API_KEY=your-token -- uvx --from "readwise-plus[mcp]" readwise-mcp
+```
+
+### Register with any MCP client
+
+```json
+{
+  "mcpServers": {
+    "readwise": {
+      "command": "uvx",
+      "args": ["--from", "readwise-plus[mcp]", "readwise-mcp"],
+      "env": { "READWISE_API_KEY": "your-token" }
+    }
+  }
+}
+```
+
+If `readwise-plus[mcp]` is already installed in the environment, run the `readwise-mcp` console script (equivalently `python -m readwise_sdk.mcp`) directly.
+
+### Tools
+
+Nine tools, backed by the SDK:
+
+- **Documents (Reader v3):** `save_to_reader`, `search_documents`, `get_document`, `update_document`, `delete_document`
+- **Highlights (Readwise v2):** `get_highlights`, `export_highlights`, `create_highlight`
+- **Books (Readwise v2):** `get_books`
+
+Auth comes from `READWISE_API_KEY` (an environment variable, or a `READWISE_API_KEY=` line in `~/.env`). Talk to your agent in natural language — "save this URL to my reading list", "find the article I archived about X" — and it picks the right tool.
 
 ## Development
 

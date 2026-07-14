@@ -28,6 +28,9 @@ cli = [
     "typer>=0.21.0",
     "rich>=14.0.0",
 ]
+mcp = [
+    "mcp>=1.26.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/EvanOman/readwise-plus"
@@ -36,6 +39,7 @@ Issues = "https://github.com/EvanOman/readwise-plus/issues"
 
 [project.scripts]
 readwise = "readwise_sdk.cli.main:app"
+readwise-mcp = "readwise_sdk.mcp.server:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -52,6 +56,7 @@ dev = [
     "respx>=0.22.0",
     "ruff>=0.14.0",
     "ty>=0.0.8",
+    "mcp>=1.26.0",
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.7.1",
     "mkdocstrings[python]>=1.0.0",
