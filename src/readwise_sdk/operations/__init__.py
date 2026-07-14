@@ -23,6 +23,7 @@ from readwise_sdk.operations.highlights import (
     TruncationInfo,
 )
 from readwise_sdk.operations.service import ReadwiseService
+from readwise_sdk.operations.sync import BatchSyncOutcome, SyncOperations
 from readwise_sdk.operations.tags import (
     TagCleanupResult,
     TagOperations,
@@ -52,6 +53,8 @@ __all__ = [
     "HighlightUpdateResult",
     "ReadingStatistics",
     "ReadwiseService",
+    "BatchSyncOutcome",
+    "SyncOperations",
     "TagCleanupResult",
     "TagOperations",
     "TagPattern",

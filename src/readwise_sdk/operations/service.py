@@ -15,6 +15,16 @@ from readwise_sdk.operations.highlights import (
     HighlightsResource,
     HighlightTagsResource,
 )
+from readwise_sdk.operations.sync import (
+    AsyncBooksResource as SyncBooksResource,
+)
+from readwise_sdk.operations.sync import (
+    AsyncDocumentsResource as SyncDocumentsResource,
+)
+from readwise_sdk.operations.sync import (
+    AsyncHighlightsResource as SyncHighlightsResource,
+)
+from readwise_sdk.operations.sync import SyncOperations
 from readwise_sdk.operations.tags import (
     HighlightTagsResource as TagMutationsResource,
 )
@@ -37,6 +47,9 @@ class ReadwiseService:
         tag_mutations: TagMutationsResource | None = None,
         digest_highlights: DigestHighlightsResource | None = None,
         digest_books: DigestBooksResource | None = None,
+        sync_highlights: SyncHighlightsResource | None = None,
+        sync_books: SyncBooksResource | None = None,
+        sync_documents: SyncDocumentsResource | None = None,
     ) -> None:
         self._documents = DocumentOperations(documents) if documents is not None else None
         self._highlights = (
@@ -59,6 +72,11 @@ class ReadwiseService:
             DigestOperations(digest_highlights, digest_books)
             if digest_highlights is not None and digest_books is not None
             else None
+        )
+        self._sync = SyncOperations(
+            highlights=sync_highlights,
+            books=sync_books,
+            documents=sync_documents,
         )
 
     @property
@@ -95,6 +113,11 @@ class ReadwiseService:
         if self._digests is None:
             raise RuntimeError("Digest operations were not configured")
         return self._digests
+
+    @property
+    def sync(self) -> SyncOperations:
+        """Return configured synchronization operations."""
+        return self._sync
 
 
 __all__ = ["ReadwiseService"]

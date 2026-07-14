@@ -113,6 +113,63 @@ def sync_incremental(
     console.print(f"  Total syncs: {manager.state.total_syncs}")
 
 
+@sync_app.command("status")
+def sync_status(
+    state_file: Annotated[
+        str,
+        typer.Option(help="State file for persistence"),
+    ] = "sync_state.json",
+) -> None:
+    """Show the current synchronization checkpoint."""
+    from readwise_sdk.operations.sync import SyncOperations
+    from readwise_sdk.state import JsonFileStateStore
+
+    checkpoint = SyncOperations(state_store=JsonFileStateStore(state_file)).status()
+    data = {
+        "last_highlight_sync": (
+            checkpoint.last_highlight_sync.isoformat()
+            if checkpoint.last_highlight_sync is not None
+            else None
+        ),
+        "last_book_sync": (
+            checkpoint.last_book_sync.isoformat() if checkpoint.last_book_sync is not None else None
+        ),
+        "last_document_sync": (
+            checkpoint.last_document_sync.isoformat()
+            if checkpoint.last_document_sync is not None
+            else None
+        ),
+        "last_sync_time": (
+            checkpoint.last_sync_time.isoformat() if checkpoint.last_sync_time is not None else None
+        ),
+    }
+    if current_output_format() is not OutputFormat.TABLE:
+        renderer().data(data)
+        return
+
+    table = Table(title="Sync Status")
+    table.add_column("Checkpoint")
+    table.add_column("Timestamp")
+    for name, value in data.items():
+        table.add_row(name.replace("_", " ").title(), value or "Never")
+    console.print(table)
+
+
+@sync_app.command("reset")
+def sync_reset(
+    state_file: Annotated[
+        str,
+        typer.Option(help="State file for persistence"),
+    ] = "sync_state.json",
+) -> None:
+    """Reset the synchronization checkpoint."""
+    from readwise_sdk.operations.sync import SyncOperations
+    from readwise_sdk.state import JsonFileStateStore
+
+    SyncOperations(state_store=JsonFileStateStore(state_file)).reset()
+    renderer().success("[green]Sync state reset.[/green]")
+
+
 # Digest commands
 @digest_app.command("daily")
 def digest_daily(

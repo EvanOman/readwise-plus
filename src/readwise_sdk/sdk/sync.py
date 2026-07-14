@@ -14,7 +14,14 @@ from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from readwise_sdk.client import ReadwiseClient
 from readwise_sdk.config import DEFAULT_MAX_RETRIES, DEFAULT_RETRY_BACKOFF, DEFAULT_TIMEOUT
-from readwise_sdk.models import BookSearch, BulkResult, DocumentSearch, DocumentSearchResult
+from readwise_sdk.models import (
+    BookSearch,
+    BulkResult,
+    DocumentSearch,
+    DocumentSearchResult,
+    SyncCheckpoint,
+    SyncResult,
+)
 from readwise_sdk.models.queries import HighlightSearch
 from readwise_sdk.operations import (
     BookSearchResult,
@@ -33,6 +40,7 @@ from readwise_sdk.operations import (
     TagPattern,
     TagReport,
 )
+from readwise_sdk.operations.sync import BatchSyncOutcome, SyncOperations
 from readwise_sdk.sdk.async_ import AsyncReadwise
 from readwise_sdk.v2.models import Book, BookCategory, Highlight, HighlightCreate, HighlightUpdate
 from readwise_sdk.v3.models import (
@@ -488,6 +496,69 @@ class _SyncDigestOperations(_SyncOperationGroup):
         )
 
 
+class _SyncSyncOperations(_SyncOperationGroup):
+    """Synchronous adapter for canonical synchronization operations."""
+
+    def __init__(self, owner: Readwise, operations: SyncOperations) -> None:
+        super().__init__(owner)
+        self._operations = operations
+
+    def full(
+        self,
+        *,
+        include_highlights: bool = True,
+        include_books: bool = True,
+        include_documents: bool = True,
+    ) -> SyncResult:
+        return self._call(
+            self._operations.full,
+            include_highlights=include_highlights,
+            include_books=include_books,
+            include_documents=include_documents,
+        )
+
+    def incremental(
+        self,
+        *,
+        include_highlights: bool = True,
+        include_books: bool = True,
+        include_documents: bool = True,
+    ) -> SyncResult:
+        return self._call(
+            self._operations.incremental,
+            include_highlights=include_highlights,
+            include_books=include_books,
+            include_documents=include_documents,
+        )
+
+    def poll_once(
+        self,
+        *,
+        include_highlights: bool = True,
+        include_documents: bool = True,
+    ) -> SyncResult:
+        return self._call(
+            self._operations.poll_once,
+            include_highlights=include_highlights,
+            include_documents=include_documents,
+        )
+
+    def batch_highlights(self, **kwargs: Any) -> BatchSyncOutcome:
+        return self._call(self._operations.batch_highlights, **kwargs)
+
+    def batch_books(self, **kwargs: Any) -> BatchSyncOutcome:
+        return self._call(self._operations.batch_books, **kwargs)
+
+    def batch_documents(self, **kwargs: Any) -> BatchSyncOutcome:
+        return self._call(self._operations.batch_documents, **kwargs)
+
+    def status(self) -> SyncCheckpoint:
+        return self._operations.status()
+
+    def reset(self) -> None:
+        self._operations.reset()
+
+
 class Readwise:
     """Concept-oriented synchronous Readwise SDK.
 
@@ -524,6 +595,7 @@ class Readwise:
         self._books = _SyncBookOperations(self, self._async.books)
         self._tags = _SyncTagOperations(self, self._async.tags)
         self._digests = _SyncDigestOperations(self, self._async.digests)
+        self._sync = _SyncSyncOperations(self, self._async.sync)
         self._portal: BlockingPortal | None = None
         self._portal_context: AbstractContextManager[BlockingPortal] | None = None
         self._lifecycle_lock = Lock()
@@ -553,7 +625,10 @@ class Readwise:
         """Return synchronous canonical digest data operations."""
         return self._digests
 
-    # sync mirrors AsyncReadwise by remaining deferred until stage 14.
+    @property
+    def sync(self) -> _SyncSyncOperations:
+        """Return synchronous canonical synchronization operations."""
+        return self._sync
 
     @property
     def raw(self) -> _SyncRawClients:

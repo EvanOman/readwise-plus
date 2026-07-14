@@ -12,6 +12,7 @@ from readwise_sdk.operations import (
     DocumentOperations,
     HighlightOperations,
     ReadwiseService,
+    SyncOperations,
     TagOperations,
 )
 from readwise_sdk.resources.v2 import (
@@ -76,8 +77,9 @@ class AsyncReadwise:
         highlights = AsyncHighlightsResource(transport)
         tags = AsyncTagsResource(transport)
         books = AsyncBooksResource(transport)
+        documents = AsyncDocumentsResource(transport)
         self._service = ReadwiseService(
-            documents=AsyncDocumentsResource(transport),
+            documents=documents,
             highlights=highlights,
             highlight_tags=tags,
             export=AsyncExportResource(transport),
@@ -87,6 +89,9 @@ class AsyncReadwise:
             tag_mutations=tags,
             digest_highlights=highlights,
             digest_books=books,
+            sync_highlights=highlights,
+            sync_books=books,
+            sync_documents=documents,
         )
         self._raw = _AsyncRawClients(self._client)
 
@@ -115,7 +120,10 @@ class AsyncReadwise:
         """Return canonical Readwise digest data operations."""
         return self._service.digests
 
-    # sync remains deferred until stage 14.
+    @property
+    def sync(self) -> SyncOperations:
+        """Return canonical synchronization operations."""
+        return self._service.sync
 
     @property
     def raw(self) -> _AsyncRawClients:

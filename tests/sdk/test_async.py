@@ -10,6 +10,7 @@ from readwise_sdk.operations import (
     DigestOperations,
     DocumentOperations,
     HighlightOperations,
+    SyncOperations,
     TagOperations,
 )
 from readwise_sdk.v2.async_client import AsyncReadwiseV2Client
@@ -34,6 +35,7 @@ def test_async_readwise_constructs_canonical_operations() -> None:
     assert isinstance(readwise.books, BookOperations)
     assert isinstance(readwise.tags, TagOperations)
     assert isinstance(readwise.digests, DigestOperations)
+    assert isinstance(readwise.sync, SyncOperations)
     assert (
         readwise._client.api_key,
         readwise._client.timeout,
@@ -42,7 +44,7 @@ def test_async_readwise_constructs_canonical_operations() -> None:
     ) == ("token", 12.5, 7, 1.25)
 
 
-@pytest.mark.parametrize("name", ["documents", "highlights", "books", "tags", "digests"])
+@pytest.mark.parametrize("name", ["documents", "highlights", "books", "tags", "digests", "sync"])
 def test_concept_attributes_delegate_to_the_canonical_service(name: str) -> None:
     """Each public concept attribute is the operation group owned by the service."""
     from readwise_sdk import AsyncReadwise
@@ -66,13 +68,13 @@ def test_raw_exposes_cached_versioned_clients_over_the_shared_client() -> None:
     assert readwise.raw.v3._client is readwise._client
 
 
-def test_sync_operation_group_remains_deferred() -> None:
-    """Only synchronization remains deferred after tag and digest consolidation."""
+def test_sync_operation_group_is_exposed() -> None:
+    """Synchronization is available from the preferred asynchronous facade."""
     from readwise_sdk import AsyncReadwise
 
     readwise = AsyncReadwise(api_key="token")
 
-    assert not hasattr(readwise, "sync")
+    assert isinstance(readwise.sync, SyncOperations)
 
 
 @pytest.mark.asyncio

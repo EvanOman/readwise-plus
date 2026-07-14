@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
-import json
 import signal
-import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from readwise_sdk._utils import parse_datetime_string
 from readwise_sdk.managers.sync import SyncResult
+from readwise_sdk.models import SyncCheckpoint
+from readwise_sdk.models import SyncResult as CanonicalSyncResult
+from readwise_sdk.operations.sync import (
+    BackgroundSyncScheduler,
+    SyncClient,
+    SyncOperations,
+)
+from readwise_sdk.state import JsonFileStateStore, MemoryStateStore
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -89,30 +95,39 @@ class BackgroundPoller:
         """
         self._client = client
         self._config = config or PollerConfig()
+        self._file_store = (
+            JsonFileStateStore(self._config.state_file) if self._config.state_file else None
+        )
         self._state = self._load_state()
         self._callbacks: list[Callable[[SyncResult], None]] = []
         self._error_callbacks: list[Callable[[Exception], None]] = []
-        self._stop_event = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._consecutive_errors = 0
-        self._current_backoff = self._config.poll_interval
-        self._lock = threading.Lock()
+        self._checkpoint_store = MemoryStateStore(self._checkpoint())
+        self._operation = SyncOperations(
+            sync_client=cast(SyncClient, self._client),
+            state_store=self._checkpoint_store,
+        )
+        self._scheduler = BackgroundSyncScheduler(
+            self._do_poll,
+            poll_interval=self._config.poll_interval,
+            max_consecutive_errors=self._config.max_consecutive_errors,
+            backoff_multiplier=self._config.backoff_multiplier,
+            max_backoff=self._config.max_backoff,
+            on_success=self._handle_poll_success,
+            on_error=self._handle_poll_error,
+            on_running_change=self._set_running,
+        )
+        self._stop_event = self._scheduler.stop_event
 
     def _load_state(self) -> PollerState:
         """Load state from file if it exists."""
-        if self._config.state_file and self._config.state_file.exists():
-            try:
-                data = json.loads(self._config.state_file.read_text())
-                return PollerState.from_dict(data)
-            except Exception:
-                pass
+        if self._file_store is not None:
+            return self._file_store.load_legacy(PollerState.from_dict, PollerState)
         return PollerState()
 
     def _save_state(self) -> None:
         """Save state to file if configured."""
-        if self._config.state_file:
-            self._config.state_file.parent.mkdir(parents=True, exist_ok=True)
-            self._config.state_file.write_text(json.dumps(self._state.to_dict(), indent=2))
+        if self._file_store is not None:
+            self._file_store.save_legacy(self._state.to_dict())
 
     @property
     def state(self) -> PollerState:
@@ -142,98 +157,27 @@ class BackgroundPoller:
 
     def _notify_callbacks(self, result: SyncResult) -> None:
         """Notify all registered callbacks."""
-        for callback in self._callbacks:
-            try:
-                callback(result)
-            except Exception:
-                pass
+        self._operation.notify_callbacks(self._callbacks, result)
 
     def _notify_error_callbacks(self, error: Exception) -> None:
         """Notify all error callbacks."""
-        for callback in self._error_callbacks:
-            try:
-                callback(error)
-            except Exception:
-                pass
+        self._operation.notify_callbacks(self._error_callbacks, error)
 
     def _do_poll(self) -> SyncResult:
         """Perform a single poll operation."""
-        from readwise_sdk.managers.sync import SyncResult as SR
-
-        now = datetime.now(UTC)
-        result = SR(sync_time=now)
-
-        if self._config.include_highlights:
-            since = self._state.last_highlight_sync
-            if since:
-                result.highlights = list(self._client.v2.list_highlights(updated_after=since))
-            else:
-                result.highlights = list(self._client.v2.list_highlights())
-
-            # Also fetch books if we're fetching highlights
-            if since:
-                result.books = list(self._client.v2.list_books(updated_after=since))
-            else:
-                result.books = list(self._client.v2.list_books())
-
-            self._state.last_highlight_sync = now
-
-        if self._config.include_documents:
-            since = self._state.last_document_sync
-            if since:
-                result.documents = list(self._client.v3.list_documents(updated_after=since))
-            else:
-                result.documents = list(self._client.v3.list_documents())
-            self._state.last_document_sync = now
-
-        return result
+        self._checkpoint_store.save(self._checkpoint())
+        canonical = self._operation.poll_once_sync(
+            include_highlights=self._config.include_highlights,
+            include_documents=self._config.include_documents,
+        )
+        checkpoint = canonical.checkpoint
+        self._state.last_highlight_sync = checkpoint.last_highlight_sync
+        self._state.last_document_sync = checkpoint.last_document_sync
+        return self._legacy_result(canonical)
 
     def _poll_loop(self) -> None:
         """Main polling loop."""
-        while not self._stop_event.is_set():
-            try:
-                result = self._do_poll()
-
-                with self._lock:
-                    self._state.last_poll_time = datetime.now(UTC)
-                    self._state.poll_count += 1
-                    self._consecutive_errors = 0
-                    self._current_backoff = self._config.poll_interval
-
-                self._save_state()
-                self._notify_callbacks(result)
-
-            except Exception as e:
-                with self._lock:
-                    self._state.error_count += 1
-                    self._state.last_error = str(e)
-                    self._consecutive_errors += 1
-
-                    # Calculate backoff
-                    self._current_backoff = min(
-                        self._current_backoff * self._config.backoff_multiplier,
-                        self._config.max_backoff,
-                    )
-
-                self._save_state()
-                self._notify_error_callbacks(e)
-
-                # Check if we should stop due to too many errors
-                if self._consecutive_errors >= self._config.max_consecutive_errors:
-                    self._state.is_running = False
-                    self._save_state()
-                    return
-
-            # Wait for next poll or stop event
-            wait_time = (
-                self._current_backoff
-                if self._consecutive_errors > 0
-                else self._config.poll_interval
-            )
-            self._stop_event.wait(wait_time)
-
-        self._state.is_running = False
-        self._save_state()
+        self._scheduler.run()
 
     def start(self, *, blocking: bool = False) -> None:
         """Start the background poller.
@@ -244,16 +188,7 @@ class BackgroundPoller:
         """
         if self._state.is_running:
             return
-
-        self._stop_event.clear()
-        self._state.is_running = True
-        self._save_state()
-
-        if blocking:
-            self._poll_loop()
-        else:
-            self._thread = threading.Thread(target=self._poll_loop, daemon=True)
-            self._thread.start()
+        self._scheduler.start(blocking=blocking)
 
     def stop(self, *, timeout: float | None = None) -> None:
         """Stop the background poller.
@@ -261,11 +196,7 @@ class BackgroundPoller:
         Args:
             timeout: Maximum time to wait for the poller to stop.
         """
-        self._stop_event.set()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=timeout)
-        self._state.is_running = False
-        self._save_state()
+        self._scheduler.stop(timeout=timeout)
 
     def poll_once(self) -> SyncResult:
         """Perform a single poll operation (for manual triggering).
@@ -282,10 +213,8 @@ class BackgroundPoller:
 
     def reset_errors(self) -> None:
         """Reset the error count and backoff."""
-        with self._lock:
-            self._consecutive_errors = 0
-            self._current_backoff = self._config.poll_interval
-            self._state.last_error = None
+        self._scheduler.reset_errors()
+        self._state.last_error = None
         self._save_state()
 
     def setup_signal_handlers(self) -> None:
@@ -299,3 +228,51 @@ class BackgroundPoller:
 
         signal.signal(signal.SIGINT, handler)
         signal.signal(signal.SIGTERM, handler)
+
+    @property
+    def _consecutive_errors(self) -> int:
+        return self._scheduler.consecutive_errors
+
+    @_consecutive_errors.setter
+    def _consecutive_errors(self, value: int) -> None:
+        self._scheduler.consecutive_errors = value
+
+    @property
+    def _current_backoff(self) -> float:
+        return self._scheduler.current_backoff
+
+    @_current_backoff.setter
+    def _current_backoff(self, value: float) -> None:
+        self._scheduler.current_backoff = value
+
+    def _checkpoint(self) -> SyncCheckpoint:
+        return SyncCheckpoint(
+            last_highlight_sync=self._state.last_highlight_sync,
+            last_document_sync=self._state.last_document_sync,
+            last_sync_time=self._state.last_poll_time,
+        )
+
+    @staticmethod
+    def _legacy_result(canonical: CanonicalSyncResult) -> SyncResult:
+        return SyncResult(
+            highlights=canonical.highlights,
+            books=canonical.books,
+            documents=canonical.documents,
+            sync_time=canonical.checkpoint.last_sync_time or datetime.now(UTC),
+        )
+
+    def _handle_poll_success(self, result: object) -> None:
+        self._state.last_poll_time = datetime.now(UTC)
+        self._state.poll_count += 1
+        self._save_state()
+        self._notify_callbacks(cast(SyncResult, result))
+
+    def _handle_poll_error(self, error: Exception) -> None:
+        self._state.error_count += 1
+        self._state.last_error = str(error)
+        self._save_state()
+        self._notify_error_callbacks(error)
+
+    def _set_running(self, is_running: bool) -> None:
+        self._state.is_running = is_running
+        self._save_state()
