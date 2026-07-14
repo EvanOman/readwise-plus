@@ -19,6 +19,7 @@ from readwise_sdk.managers import (
     SyncState,
 )
 from readwise_sdk.sdk import AsyncReadwise as AsyncReadwise
+from readwise_sdk.sdk import Readwise as Readwise
 from readwise_sdk.v2 import (
     Book,
     BookCategory,

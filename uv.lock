@@ -9,7 +9,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-07-07T01:43:53.664484438Z"
+exclude-newer = "2026-07-07T04:53:56.535333344Z"
 exclude-newer-span = "P7D"
 
 [[package]]
@@ -1178,6 +1178,7 @@ name = "readwise-plus"
 version = "0.2.1"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
     { name = "httpx" },
     { name = "pydantic" },
 ]
@@ -1213,6 +1214,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.26.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
