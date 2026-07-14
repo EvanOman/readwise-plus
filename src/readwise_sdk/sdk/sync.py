@@ -19,6 +19,7 @@ from readwise_sdk.models.queries import HighlightSearch
 from readwise_sdk.operations import (
     BookSearchResult,
     BookWithHighlights,
+    DigestData,
     DocumentStatistics,
     HighlightCreateResult,
     HighlightDeleteResult,
@@ -29,6 +30,8 @@ from readwise_sdk.operations import (
     HighlightUpdateInput,
     HighlightUpdateResult,
     ReadingStatistics,
+    TagPattern,
+    TagReport,
 )
 from readwise_sdk.sdk.async_ import AsyncReadwise
 from readwise_sdk.v2.models import Book, BookCategory, Highlight, HighlightCreate, HighlightUpdate
@@ -41,7 +44,13 @@ from readwise_sdk.v3.models import (
 )
 
 if TYPE_CHECKING:
-    from readwise_sdk.operations import BookOperations, DocumentOperations, HighlightOperations
+    from readwise_sdk.operations import (
+        BookOperations,
+        DigestOperations,
+        DocumentOperations,
+        HighlightOperations,
+        TagOperations,
+    )
     from readwise_sdk.v2.client import ReadwiseV2Client
     from readwise_sdk.v3.client import ReadwiseV3Client
 
@@ -390,6 +399,95 @@ class _SyncBookOperations(_SyncOperationGroup):
         return self._call(self._operations.count)
 
 
+class _SyncTagOperations(_SyncOperationGroup):
+    """Synchronous adapter for canonical tag operations."""
+
+    def __init__(self, owner: Readwise, operations: TagOperations) -> None:
+        super().__init__(owner)
+        self._operations = operations
+
+    def auto_tag_highlights(
+        self,
+        patterns: builtins.list[TagPattern],
+        *,
+        dry_run: bool = False,
+    ) -> dict[int, builtins.list[str]]:
+        return self._call(self._operations.auto_tag_highlights, patterns, dry_run=dry_run)
+
+    def get_tag_report(self) -> TagReport:
+        return self._call(self._operations.get_tag_report)
+
+    def merge_tags(
+        self,
+        source_tags: builtins.list[str],
+        target_tag: str,
+        *,
+        dry_run: bool = False,
+    ) -> builtins.list[int]:
+        return self._call(
+            self._operations.merge_tags,
+            source_tags,
+            target_tag,
+            dry_run=dry_run,
+        )
+
+    def rename_tag(
+        self,
+        old_name: str,
+        new_name: str,
+        *,
+        dry_run: bool = False,
+    ) -> builtins.list[int]:
+        return self._call(
+            self._operations.rename_tag,
+            old_name,
+            new_name,
+            dry_run=dry_run,
+        )
+
+    def delete_tag(self, tag_name: str, *, dry_run: bool = False) -> builtins.list[int]:
+        return self._call(self._operations.delete_tag, tag_name, dry_run=dry_run)
+
+    def get_highlights_by_tag(self, tag_name: str) -> builtins.list[Highlight]:
+        return self._call(self._operations.get_highlights_by_tag, tag_name)
+
+    def get_untagged_highlights(self) -> builtins.list[Highlight]:
+        return self._call(self._operations.get_untagged_highlights)
+
+
+class _SyncDigestOperations(_SyncOperationGroup):
+    """Synchronous adapter for canonical digest data operations."""
+
+    def __init__(self, owner: Readwise, operations: DigestOperations) -> None:
+        super().__init__(owner)
+        self._operations = operations
+
+    def daily(self, *, group_by_book: bool = True) -> DigestData:
+        return self._call(self._operations.daily, group_by_book=group_by_book)
+
+    def weekly(self, *, group_by_book: bool = True) -> DigestData:
+        return self._call(self._operations.weekly, group_by_book=group_by_book)
+
+    def book(self, book_id: int) -> DigestData:
+        return self._call(self._operations.book, book_id)
+
+    def custom(
+        self,
+        *,
+        since: datetime | None = None,
+        book_id: int | None = None,
+        group_by_book: bool = True,
+        group_by_date: bool = False,
+    ) -> DigestData:
+        return self._call(
+            self._operations.custom,
+            since=since,
+            book_id=book_id,
+            group_by_book=group_by_book,
+            group_by_date=group_by_date,
+        )
+
+
 class Readwise:
     """Concept-oriented synchronous Readwise SDK.
 
@@ -424,6 +522,8 @@ class Readwise:
         self._documents = _SyncDocumentOperations(self, self._async.documents)
         self._highlights = _SyncHighlightOperations(self, self._async.highlights)
         self._books = _SyncBookOperations(self, self._async.books)
+        self._tags = _SyncTagOperations(self, self._async.tags)
+        self._digests = _SyncDigestOperations(self, self._async.digests)
         self._portal: BlockingPortal | None = None
         self._portal_context: AbstractContextManager[BlockingPortal] | None = None
         self._lifecycle_lock = Lock()
@@ -443,7 +543,17 @@ class Readwise:
         """Return synchronous canonical Readwise book operations."""
         return self._books
 
-    # tags, digests, and sync mirror AsyncReadwise by remaining deferred.
+    @property
+    def tags(self) -> _SyncTagOperations:
+        """Return synchronous canonical tag operations."""
+        return self._tags
+
+    @property
+    def digests(self) -> _SyncDigestOperations:
+        """Return synchronous canonical digest data operations."""
+        return self._digests
+
+    # sync mirrors AsyncReadwise by remaining deferred until stage 14.
 
     @property
     def raw(self) -> _SyncRawClients:

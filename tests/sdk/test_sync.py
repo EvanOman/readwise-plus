@@ -246,14 +246,14 @@ def test_raw_retains_the_native_synchronous_compatibility_clients() -> None:
     assert readwise.raw.v3._client is readwise.raw._client
 
 
-def test_sync_surface_matches_the_operation_groups_available_in_stage_nine() -> None:
-    """No later-stage tags, digests, or sync concepts are implied prematurely."""
+def test_sync_surface_exposes_stage_thirteen_operation_groups() -> None:
+    """Tags and digests are synchronous adapters while sync remains deferred."""
     from readwise_sdk import Readwise
 
     readwise = Readwise(api_key="token")
 
-    assert not hasattr(readwise, "tags")
-    assert not hasattr(readwise, "digests")
+    assert readwise.tags is readwise.tags
+    assert readwise.digests is readwise.digests
     assert not hasattr(readwise, "sync")
     assert readwise.documents is readwise.documents
     assert readwise.highlights is readwise.highlights
@@ -268,7 +268,13 @@ def test_sync_operation_groups_do_not_expose_async_streaming() -> None:
     readwise = Readwise(api_key="token")
 
     assert not hasattr(readwise.highlights, "filter")
-    for operation_group in (readwise.documents, readwise.highlights, readwise.books):
+    for operation_group in (
+        readwise.documents,
+        readwise.highlights,
+        readwise.books,
+        readwise.tags,
+        readwise.digests,
+    ):
         assert not any(
             inspect.iscoroutinefunction(value)
             for name, value in vars(type(operation_group)).items()

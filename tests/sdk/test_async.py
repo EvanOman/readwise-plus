@@ -5,7 +5,13 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from readwise_sdk.operations import BookOperations, DocumentOperations, HighlightOperations
+from readwise_sdk.operations import (
+    BookOperations,
+    DigestOperations,
+    DocumentOperations,
+    HighlightOperations,
+    TagOperations,
+)
 from readwise_sdk.v2.async_client import AsyncReadwiseV2Client
 from readwise_sdk.v3.async_client import AsyncReadwiseV3Client
 
@@ -26,6 +32,8 @@ def test_async_readwise_constructs_canonical_operations() -> None:
     assert isinstance(readwise.documents, DocumentOperations)
     assert isinstance(readwise.highlights, HighlightOperations)
     assert isinstance(readwise.books, BookOperations)
+    assert isinstance(readwise.tags, TagOperations)
+    assert isinstance(readwise.digests, DigestOperations)
     assert (
         readwise._client.api_key,
         readwise._client.timeout,
@@ -34,7 +42,7 @@ def test_async_readwise_constructs_canonical_operations() -> None:
     ) == ("token", 12.5, 7, 1.25)
 
 
-@pytest.mark.parametrize("name", ["documents", "highlights", "books"])
+@pytest.mark.parametrize("name", ["documents", "highlights", "books", "tags", "digests"])
 def test_concept_attributes_delegate_to_the_canonical_service(name: str) -> None:
     """Each public concept attribute is the operation group owned by the service."""
     from readwise_sdk import AsyncReadwise
@@ -58,14 +66,12 @@ def test_raw_exposes_cached_versioned_clients_over_the_shared_client() -> None:
     assert readwise.raw.v3._client is readwise._client
 
 
-def test_future_operation_groups_are_deferred() -> None:
-    """Facades do not imply canonical operation groups that do not exist yet."""
+def test_sync_operation_group_remains_deferred() -> None:
+    """Only synchronization remains deferred after tag and digest consolidation."""
     from readwise_sdk import AsyncReadwise
 
     readwise = AsyncReadwise(api_key="token")
 
-    assert not hasattr(readwise, "tags")
-    assert not hasattr(readwise, "digests")
     assert not hasattr(readwise, "sync")
 
 

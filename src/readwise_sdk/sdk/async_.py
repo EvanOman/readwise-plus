@@ -8,9 +8,11 @@ from readwise_sdk.client import AsyncReadwiseClient
 from readwise_sdk.config import DEFAULT_MAX_RETRIES, DEFAULT_RETRY_BACKOFF, DEFAULT_TIMEOUT
 from readwise_sdk.operations import (
     BookOperations,
+    DigestOperations,
     DocumentOperations,
     HighlightOperations,
     ReadwiseService,
+    TagOperations,
 )
 from readwise_sdk.resources.v2 import (
     AsyncBooksResource,
@@ -72,13 +74,19 @@ class AsyncReadwise:
         )
         transport = self._client._transport
         highlights = AsyncHighlightsResource(transport)
+        tags = AsyncTagsResource(transport)
+        books = AsyncBooksResource(transport)
         self._service = ReadwiseService(
             documents=AsyncDocumentsResource(transport),
             highlights=highlights,
-            highlight_tags=AsyncTagsResource(transport),
+            highlight_tags=tags,
             export=AsyncExportResource(transport),
-            books=AsyncBooksResource(transport),
+            books=books,
             book_highlights=highlights,
+            tag_highlights=highlights,
+            tag_mutations=tags,
+            digest_highlights=highlights,
+            digest_books=books,
         )
         self._raw = _AsyncRawClients(self._client)
 
@@ -97,7 +105,17 @@ class AsyncReadwise:
         """Return canonical Readwise book operations."""
         return self._service.books
 
-    # tags, digests, and sync are deferred until wired to canonical ops in stages 13/14.
+    @property
+    def tags(self) -> TagOperations:
+        """Return canonical Readwise tag operations."""
+        return self._service.tags
+
+    @property
+    def digests(self) -> DigestOperations:
+        """Return canonical Readwise digest data operations."""
+        return self._service.digests
+
+    # sync remains deferred until stage 14.
 
     @property
     def raw(self) -> _AsyncRawClients:

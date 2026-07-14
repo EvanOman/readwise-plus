@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from readwise_sdk.operations.books import BookHighlightsResource, BookOperations, BooksResource
+from readwise_sdk.operations.digests import (
+    DigestBooksResource,
+    DigestHighlightsResource,
+    DigestOperations,
+)
 from readwise_sdk.operations.documents import DocumentOperations, DocumentsResource
 from readwise_sdk.operations.highlights import (
     ExportResource,
@@ -10,6 +15,10 @@ from readwise_sdk.operations.highlights import (
     HighlightsResource,
     HighlightTagsResource,
 )
+from readwise_sdk.operations.tags import (
+    HighlightTagsResource as TagMutationsResource,
+)
+from readwise_sdk.operations.tags import TagHighlightsResource, TagOperations
 
 
 class ReadwiseService:
@@ -24,6 +33,10 @@ class ReadwiseService:
         export: ExportResource | None = None,
         books: BooksResource | None = None,
         book_highlights: BookHighlightsResource | None = None,
+        tag_highlights: TagHighlightsResource | None = None,
+        tag_mutations: TagMutationsResource | None = None,
+        digest_highlights: DigestHighlightsResource | None = None,
+        digest_books: DigestBooksResource | None = None,
     ) -> None:
         self._documents = DocumentOperations(documents) if documents is not None else None
         self._highlights = (
@@ -35,6 +48,16 @@ class ReadwiseService:
         self._books = (
             BookOperations(books, highlights_for_books)
             if books is not None and highlights_for_books is not None
+            else None
+        )
+        self._tags = (
+            TagOperations(tag_highlights, tag_mutations)
+            if tag_highlights is not None and tag_mutations is not None
+            else None
+        )
+        self._digests = (
+            DigestOperations(digest_highlights, digest_books)
+            if digest_highlights is not None and digest_books is not None
             else None
         )
 
@@ -58,6 +81,20 @@ class ReadwiseService:
         if self._books is None:
             raise RuntimeError("Book operations were not configured")
         return self._books
+
+    @property
+    def tags(self) -> TagOperations:
+        """Return configured tag operations."""
+        if self._tags is None:
+            raise RuntimeError("Tag operations were not configured")
+        return self._tags
+
+    @property
+    def digests(self) -> DigestOperations:
+        """Return configured digest operations."""
+        if self._digests is None:
+            raise RuntimeError("Digest operations were not configured")
+        return self._digests
 
 
 __all__ = ["ReadwiseService"]

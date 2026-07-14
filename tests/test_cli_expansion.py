@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -12,6 +13,7 @@ from typer.testing import CliRunner
 
 from readwise_sdk.cli.main import app
 from readwise_sdk.models import BulkResult
+from readwise_sdk.operations.digests import DigestData, DigestGrouping
 from readwise_sdk.operations.highlights import HighlightCreateResult
 from readwise_sdk.v2.models import Highlight, HighlightColor
 from readwise_sdk.v3.models import (
@@ -328,3 +330,52 @@ def test_no_color_removes_ansi_codes_from_human_output(
     assert "Deleted document doc-1" in result.stdout
     assert "\x1b[" not in result.stdout
     assert "\x1b[" not in result.stderr
+
+
+def test_digest_custom_calls_digest_operation_and_markdown_presenter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import readwise_sdk.cli.main as main
+
+    class Digests:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        async def custom(self, **kwargs: object) -> DigestData:
+            self.calls.append(kwargs)
+            highlight = Highlight(id=7, text="A custom highlight", book_id=42)
+            return DigestData(
+                title="Custom Digest",
+                highlights=[highlight],
+                grouping=DigestGrouping.NONE,
+                groups=[],
+            )
+
+    digests = Digests()
+    service = SimpleNamespace(digests=digests)
+    monkeypatch.setattr(main, "run_operation", _operation_runner(service))
+
+    result = runner.invoke(
+        app,
+        [
+            "digest",
+            "custom",
+            "--since",
+            "2025-01-02T03:04:05",
+            "--book-id",
+            "42",
+            "--no-group-by-book",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "# Custom Digest" in result.stdout
+    assert "A custom highlight" in result.stdout
+    assert digests.calls == [
+        {
+            "since": datetime(2025, 1, 2, 3, 4, 5),
+            "book_id": 42,
+            "group_by_book": False,
+            "group_by_date": False,
+        }
+    ]

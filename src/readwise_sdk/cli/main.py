@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime
 from importlib.metadata import version as pkg_version
 from typing import Annotated
 
@@ -17,7 +18,7 @@ except ImportError:
 from readwise_sdk.cli.commands.books import books_app
 from readwise_sdk.cli.commands.documents import reader_app
 from readwise_sdk.cli.commands.highlights import highlights_app
-from readwise_sdk.cli.context import get_client
+from readwise_sdk.cli.context import discover_api_key, get_client, run_operation
 from readwise_sdk.cli.output import (
     CliOutputContext,
     OutputFormat,
@@ -26,7 +27,8 @@ from readwise_sdk.cli.output import (
     current_output_format,
     renderer,
 )
-from readwise_sdk.workflows.digest import DigestBuilder, DigestFormat
+from readwise_sdk.presenters import DigestFormat, render_digest
+from readwise_sdk.workflows.digest import DigestBuilder
 from readwise_sdk.workflows.tags import TagPattern, TagWorkflow
 
 app = typer.Typer(
@@ -184,6 +186,50 @@ def digest_book(
         with open(output, "w") as f:
             f.write(content)
         console.print(f"[green]Saved book digest to {output}[/green]")
+    else:
+        console.print(content)
+
+
+@digest_app.command("custom")
+def digest_custom(
+    since: Annotated[
+        datetime | None,
+        typer.Option(help="Only include highlights updated after this time"),
+    ] = None,
+    book_id: Annotated[int | None, typer.Option(help="Only include one book ID")] = None,
+    format_type: Annotated[str, typer.Option("--format", "-f", help="Output format")] = "markdown",
+    output: Annotated[str | None, typer.Option("-o", help="Output file")] = None,
+    group_by_book: Annotated[
+        bool,
+        typer.Option("--group-by-book/--no-group-by-book", help="Group highlights by book"),
+    ] = True,
+    group_by_date: Annotated[
+        bool,
+        typer.Option("--group-by-date", help="Group highlights by highlighted date"),
+    ] = False,
+) -> None:
+    """Generate a custom digest with optional selection and grouping."""
+    try:
+        fmt = DigestFormat(format_type)
+    except ValueError:
+        console.print("[red]Invalid format. Use: markdown, json, csv, text[/red]")
+        raise typer.Exit(1) from None
+
+    data = run_operation(
+        lambda service: service.digests.custom(
+            since=since,
+            book_id=book_id,
+            group_by_book=group_by_book,
+            group_by_date=group_by_date,
+        ),
+        api_key=discover_api_key(),
+    )
+    content = render_digest(data, fmt)
+
+    if output:
+        with open(output, "w") as file:
+            file.write(content)
+        console.print(f"[green]Saved custom digest to {output}[/green]")
     else:
         console.print(content)
 
