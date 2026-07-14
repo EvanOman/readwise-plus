@@ -25,6 +25,8 @@ class CliOutputContext:
     """Output selection stored on the root Click context."""
 
     output_format: OutputFormat = OutputFormat.TABLE
+    no_color: bool = False
+    quiet: bool = False
 
 
 console = Console()
@@ -40,6 +42,23 @@ def current_output_format() -> OutputFormat:
     if isinstance(root.obj, CliOutputContext):
         return root.obj.output_format
     return OutputFormat.TABLE
+
+
+def current_output_context() -> CliOutputContext:
+    """Return the complete root output context or its default value."""
+    context = click.get_current_context(silent=True)
+    if context is None:
+        return CliOutputContext()
+    root = context.find_root()
+    if isinstance(root.obj, CliOutputContext):
+        return root.obj
+    return CliOutputContext()
+
+
+def configure_color(*, no_color: bool) -> None:
+    """Apply one invocation's color preference to both CLI streams."""
+    console.no_color = no_color
+    error_console.no_color = no_color
 
 
 class OutputRenderer:
@@ -75,10 +94,24 @@ class OutputRenderer:
         """Write human-facing command output with legacy Rich behavior."""
         console.print(message)
 
+    def success(self, message: str) -> None:
+        """Write a suppressible success notice for mutation commands."""
+        if not current_output_context().quiet:
+            console.print(message)
+
+    def notice(self, message: str) -> None:
+        """Write a suppressible human notice to stderr."""
+        if not current_output_context().quiet:
+            error_console.print(message)
+
     def error(self, message: str) -> None:
         """Keep legacy errors on stdout, but isolate machine-mode errors."""
         target = console if self.output_format is OutputFormat.TABLE else error_console
         target.print(message)
+
+    def strict_error(self, message: str) -> None:
+        """Write errors for additive commands to stderr in every output mode."""
+        error_console.print(message)
 
 
 def renderer(*, legacy_json: bool = False) -> OutputRenderer:
@@ -92,6 +125,8 @@ __all__ = [
     "OutputFormat",
     "OutputRenderer",
     "console",
+    "configure_color",
+    "current_output_context",
     "current_output_format",
     "error_console",
     "renderer",

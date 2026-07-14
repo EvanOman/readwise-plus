@@ -21,6 +21,7 @@ from readwise_sdk.cli.context import get_client
 from readwise_sdk.cli.output import (
     CliOutputContext,
     OutputFormat,
+    configure_color,
     console,
     current_output_format,
     renderer,
@@ -42,9 +43,18 @@ def cli_context(
         OutputFormat,
         typer.Option("--output", help="Output format: table, json, or jsonl"),
     ] = OutputFormat.TABLE,
+    no_color: Annotated[
+        bool,
+        typer.Option("--no-color", help="Disable colored output"),
+    ] = False,
+    quiet: Annotated[
+        bool,
+        typer.Option("--quiet", help="Suppress non-data notices"),
+    ] = False,
 ) -> None:
     """Configure shared CLI invocation state."""
-    ctx.obj = CliOutputContext(output_format=output)
+    ctx.obj = CliOutputContext(output_format=output, no_color=no_color, quiet=quiet)
+    configure_color(no_color=no_color)
 
 
 # Sub-apps
@@ -54,6 +64,7 @@ tags_app = typer.Typer(help="Manage tags")
 
 app.add_typer(highlights_app, name="highlights")
 app.add_typer(books_app, name="books")
+app.add_typer(reader_app, name="documents")
 app.add_typer(reader_app, name="reader")
 app.add_typer(sync_app, name="sync")
 app.add_typer(digest_app, name="digest")
