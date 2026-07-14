@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from readwise_sdk.errors import NotFoundError
@@ -265,6 +265,60 @@ class DocumentOperations:
             items_older_than_30_days=sum(age > 30 for age in ages_days),
             items_older_than_90_days=sum(age > 90 for age in ages_days),
         )
+
+    async def since(
+        self,
+        *,
+        days: int | None = None,
+        hours: int | None = None,
+        since: datetime | None = None,
+    ) -> list[Document]:
+        """Reproduce the manager's time-window precedence and validation."""
+        if since is None:
+            if days is not None:
+                since = datetime.now(UTC) - timedelta(days=days)
+            elif hours is not None:
+                since = datetime.now(UTC) - timedelta(hours=hours)
+            else:
+                raise ValueError("Must specify days, hours, or since")
+        return [item async for item in self._resource.iter(updated_after=since)]
+
+    async def filter(
+        self,
+        predicate: Callable[[Document], bool],
+        *,
+        location: DocumentLocation | None = None,
+    ) -> AsyncIterator[Document]:
+        """Retain manager-compatible lazy predicate filtering."""
+        async for document in self._resource.iter(location=location):
+            if predicate(document):
+                yield document
+
+    async def search_items(
+        self,
+        query: str,
+        *,
+        case_sensitive: bool = False,
+        location: DocumentLocation | None = None,
+    ) -> list[Document]:
+        """Search the title, author, and summary using legacy semantics."""
+        normalized = query if case_sensitive else query.lower()
+        results: list[Document] = []
+        async for document in self._resource.iter(location=location):
+            fields = (document.title or "", document.author or "", document.summary or "")
+            if not case_sensitive:
+                fields = tuple(field.lower() for field in fields)
+            if any(normalized in field for field in fields):
+                results.append(document)
+        return results
+
+    async def by_category(self, category: DocumentCategory) -> list[Document]:
+        """Materialize documents in one Reader category."""
+        return [item async for item in self._resource.iter(category=category)]
+
+    async def unread_count(self) -> int:
+        """Count inbox and reading-list documents using legacy requests."""
+        return len(await self.inbox()) + len(await self.later())
 
     async def bulk_move(
         self,
