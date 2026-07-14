@@ -3,7 +3,7 @@
 from importlib.metadata import version
 
 from readwise_sdk.client import AsyncReadwiseClient, ReadwiseClient
-from readwise_sdk.exceptions import (
+from readwise_sdk.errors import (
     AuthenticationError,
     NotFoundError,
     RateLimitError,

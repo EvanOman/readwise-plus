@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from readwise_sdk.client import READWISE_API_V3_BASE
 from readwise_sdk.v3.models import (
     CreateDocumentResult,
     Document,
@@ -90,7 +89,7 @@ class AsyncReadwiseV3Client:
             params["withHtmlContent"] = "true"
 
         async for item in self._client.paginate(
-            f"{READWISE_API_V3_BASE}/list/",
+            f"{self._client.config.v3_base_url}/list/",
             params=params,
             cursor_key="nextPageCursor",
         ):
@@ -112,7 +111,7 @@ class AsyncReadwiseV3Client:
         if with_content:
             params["withHtmlContent"] = "true"
 
-        response = await self._client.get(f"{READWISE_API_V3_BASE}/list/", params=params)
+        response = await self._client.get(f"{self._client.config.v3_base_url}/list/", params=params)
         data = response.json()
         results = data.get("results", [])
 
@@ -130,7 +129,7 @@ class AsyncReadwiseV3Client:
             CreateDocumentResult with id and url.
         """
         response = await self._client.post(
-            f"{READWISE_API_V3_BASE}/save/",
+            f"{self._client.config.v3_base_url}/save/",
             json=document.to_api_dict(),
         )
         return CreateDocumentResult.model_validate(response.json())
@@ -178,7 +177,7 @@ class AsyncReadwiseV3Client:
             NotFoundError: If the document doesn't exist.
         """
         response = await self._client.patch(
-            f"{READWISE_API_V3_BASE}/update/{document_id}/",
+            f"{self._client.config.v3_base_url}/update/{document_id}/",
             json=update.to_api_dict(),
         )
         return CreateDocumentResult.model_validate(response.json())
@@ -192,7 +191,7 @@ class AsyncReadwiseV3Client:
         Raises:
             NotFoundError: If the document doesn't exist.
         """
-        await self._client.delete(f"{READWISE_API_V3_BASE}/delete/{document_id}/")
+        await self._client.delete(f"{self._client.config.v3_base_url}/delete/{document_id}/")
 
     async def move_to_later(self, document_id: str) -> CreateDocumentResult:
         """Move a document to the reading list (later).
@@ -239,7 +238,7 @@ class AsyncReadwiseV3Client:
             DocumentTag objects with key and name.
         """
         async for item in self._client.paginate(
-            f"{READWISE_API_V3_BASE}/tags/",
+            f"{self._client.config.v3_base_url}/tags/",
             cursor_key="nextPageCursor",
         ):
             yield DocumentTag.model_validate(item)
@@ -272,7 +271,7 @@ class AsyncReadwiseV3Client:
         # First get the document to see existing tags
         doc = await self.get_document(document_id)
         if doc is None:
-            from readwise_sdk.exceptions import NotFoundError
+            from readwise_sdk.errors import NotFoundError
 
             raise NotFoundError(f"Document {document_id} not found")
 
@@ -294,7 +293,7 @@ class AsyncReadwiseV3Client:
         """
         doc = await self.get_document(document_id)
         if doc is None:
-            from readwise_sdk.exceptions import NotFoundError
+            from readwise_sdk.errors import NotFoundError
 
             raise NotFoundError(f"Document {document_id} not found")
 

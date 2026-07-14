@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
-import os
-from importlib.metadata import version
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from readwise_sdk._utils import handle_response, parse_pagination_cursor
-from readwise_sdk.exceptions import AuthenticationError, RateLimitError, ReadwiseError
+from readwise_sdk.config import (
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_RETRY_BACKOFF,
+    DEFAULT_TIMEOUT,
+    DEFAULT_USER_AGENT,
+    ClientConfig,
+    resolve_api_key,
+)
+from readwise_sdk.config import (
+    READWISE_API_V2_BASE as CONFIG_READWISE_API_V2_BASE,
+)
+from readwise_sdk.config import (
+    READWISE_API_V3_BASE as CONFIG_READWISE_API_V3_BASE,
+)
+from readwise_sdk.errors import AuthenticationError, RateLimitError, ReadwiseError
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -19,17 +32,10 @@ if TYPE_CHECKING:
     from readwise_sdk.v3.async_client import AsyncReadwiseV3Client
     from readwise_sdk.v3.client import ReadwiseV3Client
 
-# API base URLs
-READWISE_API_V2_BASE = "https://readwise.io/api/v2"
-READWISE_API_V3_BASE = "https://readwise.io/api/v3"
-
-# Default configuration
-DEFAULT_TIMEOUT = 30.0
-DEFAULT_MAX_RETRIES = 3
-DEFAULT_RETRY_BACKOFF = 0.5
-
-# User agent string with dynamic version
-_USER_AGENT = f"readwise-plus/{version('readwise-plus')}"
+# Compatibility alias for the previous module-level user agent.
+_USER_AGENT = DEFAULT_USER_AGENT
+READWISE_API_V2_BASE = CONFIG_READWISE_API_V2_BASE
+READWISE_API_V3_BASE = CONFIG_READWISE_API_V3_BASE
 
 
 class BaseClient:
@@ -53,17 +59,61 @@ class BaseClient:
             retry_backoff: Base backoff time between retries (exponential).
             _defer_validation: Internal flag used by create_optional(). Do not use directly.
         """
-        self.api_key = api_key or os.environ.get("READWISE_API_KEY")
-        if not self.api_key and not _defer_validation:
+        resolved_api_key = resolve_api_key(api_key)
+        if not resolved_api_key and not _defer_validation:
             raise AuthenticationError(
                 "API key is required. Set READWISE_API_KEY or pass api_key parameter."
             )
 
-        self.timeout = timeout
-        self.max_retries = max_retries
-        self.retry_backoff = retry_backoff
+        self._config = ClientConfig(
+            api_key=resolved_api_key,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+        )
 
         self._client: httpx.Client | None = None
+
+    @property
+    def config(self) -> ClientConfig:
+        """Return the immutable canonical client configuration."""
+        return self._config
+
+    @property
+    def api_key(self) -> str | None:
+        """Return the configured API key."""
+        return self._config.api_key
+
+    @api_key.setter
+    def api_key(self, value: str | None) -> None:
+        self._config = replace(self._config, api_key=value)
+
+    @property
+    def timeout(self) -> float:
+        """Return the request timeout in seconds."""
+        return self._config.timeout
+
+    @timeout.setter
+    def timeout(self, value: float) -> None:
+        self._config = replace(self._config, timeout=value)
+
+    @property
+    def max_retries(self) -> int:
+        """Return the maximum number of request retries."""
+        return self._config.max_retries
+
+    @max_retries.setter
+    def max_retries(self, value: int) -> None:
+        self._config = replace(self._config, max_retries=value)
+
+    @property
+    def retry_backoff(self) -> float:
+        """Return the base exponential retry backoff in seconds."""
+        return self._config.retry_backoff
+
+    @retry_backoff.setter
+    def retry_backoff(self, value: float) -> None:
+        self._config = replace(self._config, retry_backoff=value)
 
     @property
     def is_configured(self) -> bool:
@@ -83,7 +133,7 @@ class BaseClient:
                 headers={
                     "Authorization": f"Token {self.api_key}",
                     "Content-Type": "application/json",
-                    "User-Agent": _USER_AGENT,
+                    "User-Agent": self.config.user_agent,
                 },
             )
         return self._client
@@ -237,7 +287,7 @@ class ReadwiseClient(BaseClient):
             True if the token is valid, False otherwise.
         """
         try:
-            response = self.get(f"{READWISE_API_V2_BASE}/auth/")
+            response = self.get(f"{self.config.v2_base_url}/auth/")
             return response.status_code == 204
         except AuthenticationError:
             return False
@@ -312,19 +362,63 @@ class AsyncReadwiseClient:
             retry_backoff: Base backoff time between retries (exponential).
             _defer_validation: Internal flag used by create_optional(). Do not use directly.
         """
-        self.api_key = api_key or os.environ.get("READWISE_API_KEY")
-        if not self.api_key and not _defer_validation:
+        resolved_api_key = resolve_api_key(api_key)
+        if not resolved_api_key and not _defer_validation:
             raise AuthenticationError(
                 "API key is required. Set READWISE_API_KEY or pass api_key parameter."
             )
 
-        self.timeout = timeout
-        self.max_retries = max_retries
-        self.retry_backoff = retry_backoff
+        self._config = ClientConfig(
+            api_key=resolved_api_key,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+        )
 
         self._client: httpx.AsyncClient | None = None
         self._v2: AsyncReadwiseV2Client | None = None
         self._v3: AsyncReadwiseV3Client | None = None
+
+    @property
+    def config(self) -> ClientConfig:
+        """Return the immutable canonical client configuration."""
+        return self._config
+
+    @property
+    def api_key(self) -> str | None:
+        """Return the configured API key."""
+        return self._config.api_key
+
+    @api_key.setter
+    def api_key(self, value: str | None) -> None:
+        self._config = replace(self._config, api_key=value)
+
+    @property
+    def timeout(self) -> float:
+        """Return the request timeout in seconds."""
+        return self._config.timeout
+
+    @timeout.setter
+    def timeout(self, value: float) -> None:
+        self._config = replace(self._config, timeout=value)
+
+    @property
+    def max_retries(self) -> int:
+        """Return the maximum number of request retries."""
+        return self._config.max_retries
+
+    @max_retries.setter
+    def max_retries(self, value: int) -> None:
+        self._config = replace(self._config, max_retries=value)
+
+    @property
+    def retry_backoff(self) -> float:
+        """Return the base exponential retry backoff in seconds."""
+        return self._config.retry_backoff
+
+    @retry_backoff.setter
+    def retry_backoff(self, value: float) -> None:
+        self._config = replace(self._config, retry_backoff=value)
 
     @property
     def is_configured(self) -> bool:
@@ -386,7 +480,7 @@ class AsyncReadwiseClient:
                 headers={
                     "Authorization": f"Token {self.api_key}",
                     "Content-Type": "application/json",
-                    "User-Agent": _USER_AGENT,
+                    "User-Agent": self.config.user_agent,
                 },
             )
         return self._client
@@ -479,7 +573,7 @@ class AsyncReadwiseClient:
             True if the token is valid, False otherwise.
         """
         try:
-            response = await self.get(f"{READWISE_API_V2_BASE}/auth/")
+            response = await self.get(f"{self.config.v2_base_url}/auth/")
             return response.status_code == 204
         except AuthenticationError:
             return False

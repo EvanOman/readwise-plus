@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
-from readwise_sdk.exceptions import (
+from readwise_sdk.errors import (
     AuthenticationError,
     NotFoundError,
     RateLimitError,
