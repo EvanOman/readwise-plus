@@ -22,6 +22,7 @@ from readwise_sdk.config import (
     READWISE_API_V3_BASE as CONFIG_READWISE_API_V3_BASE,
 )
 from readwise_sdk.errors import AuthenticationError, RateLimitError, ReadwiseError
+from readwise_sdk.transport.async_ import AsyncTransport
 from readwise_sdk.transport.errors import handle_response
 from readwise_sdk.transport.pagination import KeyedPage, paginate, paginate_async
 from readwise_sdk.transport.retry import (
@@ -376,9 +377,14 @@ class AsyncReadwiseClient:
             retry_backoff=retry_backoff,
         )
 
-        self._client: httpx.AsyncClient | None = None
+        self._transport = AsyncTransport(self._config)
         self._v2: AsyncReadwiseV2Client | None = None
         self._v3: AsyncReadwiseV3Client | None = None
+
+    @property
+    def _client(self) -> httpx.AsyncClient | None:
+        """Retain the legacy observable reference to the raw HTTP client."""
+        return self._transport.raw_client
 
     @property
     def config(self) -> ClientConfig:
@@ -393,6 +399,7 @@ class AsyncReadwiseClient:
     @api_key.setter
     def api_key(self, value: str | None) -> None:
         self._config = replace(self._config, api_key=value)
+        self._transport.config = self._config
 
     @property
     def timeout(self) -> float:
@@ -402,6 +409,7 @@ class AsyncReadwiseClient:
     @timeout.setter
     def timeout(self, value: float) -> None:
         self._config = replace(self._config, timeout=value)
+        self._transport.config = self._config
 
     @property
     def max_retries(self) -> int:
@@ -411,6 +419,7 @@ class AsyncReadwiseClient:
     @max_retries.setter
     def max_retries(self, value: int) -> None:
         self._config = replace(self._config, max_retries=value)
+        self._transport.config = self._config
 
     @property
     def retry_backoff(self) -> float:
@@ -420,6 +429,7 @@ class AsyncReadwiseClient:
     @retry_backoff.setter
     def retry_backoff(self, value: float) -> None:
         self._config = replace(self._config, retry_backoff=value)
+        self._transport.config = self._config
 
     @property
     def is_configured(self) -> bool:
@@ -475,16 +485,7 @@ class AsyncReadwiseClient:
     @property
     def client(self) -> httpx.AsyncClient:
         """Lazily initialize and return the async HTTP client."""
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                timeout=self.timeout,
-                headers={
-                    "Authorization": f"Token {self.api_key}",
-                    "Content-Type": "application/json",
-                    "User-Agent": self.config.user_agent,
-                },
-            )
-        return self._client
+        return self._transport.client
 
     @property
     def v2(self) -> AsyncReadwiseV2Client:
@@ -506,9 +507,7 @@ class AsyncReadwiseClient:
 
     async def close(self) -> None:
         """Close the HTTP client."""
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        await self._transport.close()
 
     async def __aenter__(self) -> AsyncReadwiseClient:
         return self
@@ -524,35 +523,7 @@ class AsyncReadwiseClient:
         json: dict[str, Any] | None = None,
     ) -> httpx.Response:
         """Make an async HTTP request with retry logic."""
-        if not self.api_key:
-            raise AuthenticationError(
-                "API key is required. Set READWISE_API_KEY or pass api_key parameter."
-            )
-
-        import asyncio
-
-        last_error: Exception | None = None
-
-        for attempt in range(self.max_retries + 1):
-            try:
-                response = await self.client.request(method, url, params=params, json=json)
-                return handle_response(response)
-            except RETRYABLE_NETWORK_EXCEPTIONS as e:
-                last_error = e
-                if attempt < self.max_retries and is_retryable_exception(e):
-                    wait_time = calculate_retry_delay(e, self.retry_backoff, attempt)
-                    if wait_time is not None:
-                        await asyncio.sleep(wait_time)
-            except RateLimitError as e:
-                last_error = e
-                if attempt < self.max_retries and is_retryable_exception(e):
-                    wait_time = calculate_retry_delay(e, self.retry_backoff, attempt)
-                    if wait_time is not None:
-                        await asyncio.sleep(wait_time)
-                else:
-                    raise
-
-        raise ReadwiseError(f"Request failed after {self.max_retries + 1} attempts: {last_error}")
+        return await self._transport.request(method, url, params=params, json=json)
 
     async def get(self, url: str, params: dict[str, Any] | None = None) -> httpx.Response:
         """Make an async GET request."""
