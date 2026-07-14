@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
-from readwise_sdk.v3.models import Document, DocumentCategory, DocumentLocation
+from readwise_sdk.models.reader import Document, DocumentCategory, DocumentLocation
 
 WORDS_PER_MINUTE = 200
 

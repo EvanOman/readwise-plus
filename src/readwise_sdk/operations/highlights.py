@@ -9,8 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol, cast
 
 from readwise_sdk.models import BulkResult, HighlightSearch, HighlightSummary
-from readwise_sdk.models.results import OperationFailure
-from readwise_sdk.v2.models import (
+from readwise_sdk.models.readwise import (
     BookCategory,
     ExportBook,
     Highlight,
@@ -18,6 +17,7 @@ from readwise_sdk.v2.models import (
     HighlightUpdate,
     Tag,
 )
+from readwise_sdk.models.results import OperationFailure
 
 MAX_TEXT_LENGTH = 8191
 MAX_NOTE_LENGTH = 8191

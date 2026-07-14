@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from readwise_sdk.v2.models import Highlight, Tag
+from readwise_sdk.models.readwise import Highlight, Tag
 
 
 class TagHighlightsResource(Protocol):

@@ -23,6 +23,20 @@ from readwise_sdk.models import (
     SyncResult,
 )
 from readwise_sdk.models.queries import HighlightSearch
+from readwise_sdk.models.reader import (
+    CreateDocumentResult,
+    Document,
+    DocumentCreate,
+    DocumentLocation,
+    DocumentUpdate,
+)
+from readwise_sdk.models.readwise import (
+    Book,
+    BookCategory,
+    Highlight,
+    HighlightCreate,
+    HighlightUpdate,
+)
 from readwise_sdk.operations import (
     BookSearchResult,
     BookWithHighlights,
@@ -42,14 +56,6 @@ from readwise_sdk.operations import (
 )
 from readwise_sdk.operations.sync import BatchSyncOutcome, SyncOperations
 from readwise_sdk.sdk.async_ import AsyncReadwise
-from readwise_sdk.v2.models import Book, BookCategory, Highlight, HighlightCreate, HighlightUpdate
-from readwise_sdk.v3.models import (
-    CreateDocumentResult,
-    Document,
-    DocumentCreate,
-    DocumentLocation,
-    DocumentUpdate,
-)
 
 if TYPE_CHECKING:
     from readwise_sdk.operations import (

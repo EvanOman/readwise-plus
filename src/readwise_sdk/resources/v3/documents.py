@@ -6,9 +6,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
 
-from readwise_sdk.transport.async_ import AsyncTransport
-from readwise_sdk.transport.pagination import ReaderV3Page, paginate_async
-from readwise_sdk.v3.models import (
+from readwise_sdk.models.reader import (
     CreateDocumentResult,
     Document,
     DocumentCategory,
@@ -16,6 +14,8 @@ from readwise_sdk.v3.models import (
     DocumentLocation,
     DocumentUpdate,
 )
+from readwise_sdk.transport.async_ import AsyncTransport
+from readwise_sdk.transport.pagination import ReaderV3Page, paginate_async
 
 
 class AsyncDocumentsResource:

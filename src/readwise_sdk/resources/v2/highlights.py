@@ -6,9 +6,9 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
 
+from readwise_sdk.models.readwise import Highlight, HighlightCreate, HighlightUpdate
 from readwise_sdk.transport.async_ import AsyncTransport
 from readwise_sdk.transport.pagination import StandardV2Page, paginate_async
-from readwise_sdk.v2.models import Highlight, HighlightCreate, HighlightUpdate
 
 
 class AsyncHighlightsResource:

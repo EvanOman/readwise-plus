@@ -10,10 +10,10 @@ from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
 
 from readwise_sdk.models import SyncCheckpoint
+from readwise_sdk.models.reader import Document
+from readwise_sdk.models.readwise import Book, Highlight
 from readwise_sdk.models.results import SyncResult
 from readwise_sdk.state import MemoryStateStore, StateStore
-from readwise_sdk.v2.models import Book, Highlight
-from readwise_sdk.v3.models import Document
 
 
 class AsyncHighlightsResource(Protocol):

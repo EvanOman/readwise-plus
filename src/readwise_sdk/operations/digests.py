@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Protocol
 
-from readwise_sdk.v2.models import Book, Highlight
+from readwise_sdk.models.readwise import Book, Highlight
 
 
 class DigestHighlightsResource(Protocol):

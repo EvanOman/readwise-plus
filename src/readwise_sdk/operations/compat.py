@@ -12,8 +12,8 @@ from collections.abc import AsyncIterator, Awaitable, Iterator
 from typing import Any, cast
 
 from readwise_sdk.models import BulkResult
-from readwise_sdk.v2.models import HighlightCreate, HighlightUpdate
-from readwise_sdk.v3.models import DocumentCreate, DocumentLocation, DocumentUpdate
+from readwise_sdk.models.reader import DocumentCreate, DocumentLocation, DocumentUpdate
+from readwise_sdk.models.readwise import HighlightCreate, HighlightUpdate
 
 
 def run_sync[ResultT](awaitable: Awaitable[ResultT]) -> ResultT:

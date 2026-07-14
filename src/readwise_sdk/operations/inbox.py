@@ -8,8 +8,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from readwise_sdk.models import BulkResult
+from readwise_sdk.models.reader import Document, DocumentCategory, DocumentLocation
 from readwise_sdk.operations.documents import DocumentOperations
-from readwise_sdk.v3.models import Document, DocumentCategory, DocumentLocation
 
 
 class ArchiveRuleLike(Protocol):

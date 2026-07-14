@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from readwise_sdk.models.readwise import DailyReview
 from readwise_sdk.transport.async_ import AsyncTransport
-from readwise_sdk.v2.models import DailyReview
 
 
 class AsyncReviewResource:

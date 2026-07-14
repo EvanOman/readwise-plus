@@ -10,8 +10,7 @@ from typing import Protocol
 
 from readwise_sdk.errors import NotFoundError
 from readwise_sdk.models import BulkResult, DocumentSearch, DocumentSearchResult, DocumentSummary
-from readwise_sdk.models.results import OperationFailure
-from readwise_sdk.v3.models import (
+from readwise_sdk.models.reader import (
     CreateDocumentResult,
     Document,
     DocumentCategory,
@@ -19,6 +18,7 @@ from readwise_sdk.v3.models import (
     DocumentLocation,
     DocumentUpdate,
 )
+from readwise_sdk.models.results import OperationFailure
 
 
 class DocumentsResource(Protocol):

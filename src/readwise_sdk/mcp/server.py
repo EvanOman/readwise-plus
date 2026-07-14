@@ -30,6 +30,13 @@ from readwise_sdk.mcp.output import (
     _json_result,
 )
 from readwise_sdk.models import BookSearch, DocumentSearch, HighlightSearch
+from readwise_sdk.models.reader import (
+    DocumentCategory,
+    DocumentCreate,
+    DocumentLocation,
+    DocumentUpdate,
+)
+from readwise_sdk.models.readwise import BookCategory
 from readwise_sdk.operations import ReadwiseService
 from readwise_sdk.resources.v2 import (
     AsyncBooksResource,
@@ -38,13 +45,6 @@ from readwise_sdk.resources.v2 import (
     AsyncTagsResource,
 )
 from readwise_sdk.resources.v3 import AsyncDocumentsResource
-from readwise_sdk.v2.models import BookCategory
-from readwise_sdk.v3.models import (
-    DocumentCategory,
-    DocumentCreate,
-    DocumentLocation,
-    DocumentUpdate,
-)
 
 # ---------------------------------------------------------------------------
 # Server + client setup
