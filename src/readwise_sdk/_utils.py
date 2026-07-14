@@ -7,92 +7,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-from urllib.parse import parse_qs, urlparse
 
-import httpx
-
-from readwise_sdk.errors import (
-    AuthenticationError,
-    NotFoundError,
-    RateLimitError,
-    ReadwiseError,
-    ServerError,
-    ValidationError,
+from readwise_sdk.transport.errors import handle_response as handle_response
+from readwise_sdk.transport.pagination import (
+    parse_pagination_cursor as parse_pagination_cursor,
 )
-
-
-def handle_response(response: httpx.Response) -> httpx.Response:
-    """Handle HTTP response and raise appropriate exceptions.
-
-    Args:
-        response: The HTTP response to handle.
-
-    Returns:
-        The response if successful.
-
-    Raises:
-        AuthenticationError: If status is 401.
-        NotFoundError: If status is 404.
-        RateLimitError: If status is 429.
-        ValidationError: If status is 400.
-        ServerError: If status is 5xx.
-        ReadwiseError: For other error statuses.
-    """
-    if response.is_success:
-        return response
-
-    body = response.text
-    status = response.status_code
-
-    if status == 401:
-        raise AuthenticationError(response_body=body)
-    if status == 404:
-        raise NotFoundError(response_body=body)
-    if status == 429:
-        retry_after = response.headers.get("Retry-After")
-        raise RateLimitError(
-            retry_after=int(retry_after) if retry_after else None,
-            response_body=body,
-        )
-    if status == 400:
-        raise ValidationError(message=f"Validation error: {body}", response_body=body)
-    if status >= 500:
-        raise ServerError(
-            message=f"Server error: {body}",
-            status_code=status,
-            response_body=body,
-        )
-    raise ReadwiseError(
-        message=f"Unexpected error: {body}",
-        status_code=status,
-        response_body=body,
-    )
-
-
-def parse_pagination_cursor(
-    next_cursor: str,
-    current_url: str,
-    current_params: dict[str, Any],
-) -> tuple[str, dict[str, Any]]:
-    """Parse a pagination cursor, handling both full URLs and cursor strings.
-
-    Args:
-        next_cursor: The next cursor value (URL or cursor string).
-        current_url: The current URL being paginated.
-        current_params: The current query parameters.
-
-    Returns:
-        Tuple of (url, params) for the next request.
-    """
-    next_cursor = str(next_cursor)  # Handle integer cursors from export API
-    if next_cursor.startswith("http"):
-        parsed = urlparse(next_cursor)
-        url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-        params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
-        return url, params
-    params = current_params.copy()
-    params["pageCursor"] = next_cursor
-    return current_url, params
 
 
 def parse_datetime_string(value: Any) -> datetime | None:

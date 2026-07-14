@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from readwise_sdk.client import ReadwiseClient
+from readwise_sdk.transport.pagination import ExportV2Page, paginate
 from readwise_sdk.v2.models import (
     Book,
     BookCategory,
@@ -378,10 +379,11 @@ class ReadwiseV2Client:
         if include_deleted:
             params["includeDeleted"] = "true"
 
-        for item in self._client.paginate(
+        for item in paginate(
+            self._client.get,
             f"{self._client.config.v2_base_url}/export/",
             params=params,
-            cursor_key="nextPageCursor",
+            decoder=ExportV2Page(),
         ):
             yield ExportBook.model_validate(item)
 

@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from readwise_sdk._utils import handle_response, parse_pagination_cursor
 from readwise_sdk.config import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_BACKOFF,
@@ -23,6 +22,13 @@ from readwise_sdk.config import (
     READWISE_API_V3_BASE as CONFIG_READWISE_API_V3_BASE,
 )
 from readwise_sdk.errors import AuthenticationError, RateLimitError, ReadwiseError
+from readwise_sdk.transport.errors import handle_response
+from readwise_sdk.transport.pagination import KeyedPage, paginate, paginate_async
+from readwise_sdk.transport.retry import (
+    RETRYABLE_NETWORK_EXCEPTIONS,
+    calculate_retry_delay,
+    is_retryable_exception,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -171,15 +177,18 @@ class BaseClient:
             try:
                 response = self.client.request(method, url, params=params, json=json)
                 return handle_response(response)
-            except (httpx.ConnectError, httpx.TimeoutException) as e:
+            except RETRYABLE_NETWORK_EXCEPTIONS as e:
                 last_error = e
-                if attempt < self.max_retries:
-                    wait_time = self.retry_backoff * (2**attempt)
-                    time.sleep(wait_time)
+                if attempt < self.max_retries and is_retryable_exception(e):
+                    wait_time = calculate_retry_delay(e, self.retry_backoff, attempt)
+                    if wait_time is not None:
+                        time.sleep(wait_time)
             except RateLimitError as e:
                 last_error = e
-                if attempt < self.max_retries and e.retry_after:
-                    time.sleep(e.retry_after)
+                if attempt < self.max_retries and is_retryable_exception(e):
+                    wait_time = calculate_retry_delay(e, self.retry_backoff, attempt)
+                    if wait_time is not None:
+                        time.sleep(wait_time)
                 else:
                     raise
 
@@ -310,20 +319,12 @@ class ReadwiseClient(BaseClient):
         Yields:
             Individual result items from each page.
         """
-        params = params.copy() if params else {}
-
-        while True:
-            response = self.get(url, params=params)
-            data = response.json()
-
-            results = data.get(results_key, [])
-            yield from results
-
-            next_cursor = data.get(cursor_key)
-            if not next_cursor:
-                break
-
-            url, params = parse_pagination_cursor(next_cursor, url, params)
+        yield from paginate(
+            self.get,
+            url,
+            params,
+            decoder=KeyedPage(results_key=results_key, cursor_key=cursor_key),
+        )
 
 
 class AsyncReadwiseClient:
@@ -536,15 +537,18 @@ class AsyncReadwiseClient:
             try:
                 response = await self.client.request(method, url, params=params, json=json)
                 return handle_response(response)
-            except (httpx.ConnectError, httpx.TimeoutException) as e:
+            except RETRYABLE_NETWORK_EXCEPTIONS as e:
                 last_error = e
-                if attempt < self.max_retries:
-                    wait_time = self.retry_backoff * (2**attempt)
-                    await asyncio.sleep(wait_time)
+                if attempt < self.max_retries and is_retryable_exception(e):
+                    wait_time = calculate_retry_delay(e, self.retry_backoff, attempt)
+                    if wait_time is not None:
+                        await asyncio.sleep(wait_time)
             except RateLimitError as e:
                 last_error = e
-                if attempt < self.max_retries and e.retry_after:
-                    await asyncio.sleep(e.retry_after)
+                if attempt < self.max_retries and is_retryable_exception(e):
+                    wait_time = calculate_retry_delay(e, self.retry_backoff, attempt)
+                    if wait_time is not None:
+                        await asyncio.sleep(wait_time)
                 else:
                     raise
 
@@ -596,18 +600,10 @@ class AsyncReadwiseClient:
         Yields:
             Individual result items from each page.
         """
-        params = params.copy() if params else {}
-
-        while True:
-            response = await self.get(url, params=params)
-            data = response.json()
-
-            results = data.get(results_key, [])
-            for item in results:
-                yield item
-
-            next_cursor = data.get(cursor_key)
-            if not next_cursor:
-                break
-
-            url, params = parse_pagination_cursor(next_cursor, url, params)
+        async for item in paginate_async(
+            self.get,
+            url,
+            params,
+            decoder=KeyedPage(results_key=results_key, cursor_key=cursor_key),
+        ):
+            yield item

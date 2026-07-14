@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from readwise_sdk.transport.errors import handle_response
+
 
 class ReadwiseError(Exception):
     """Base exception for all Readwise SDK errors."""
@@ -83,4 +85,5 @@ __all__ = [
     "ReadwiseError",
     "ServerError",
     "ValidationError",
+    "handle_response",
 ]

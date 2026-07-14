@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from readwise_sdk.transport.pagination import ReaderV3Page, paginate_async
 from readwise_sdk.v3.models import (
     CreateDocumentResult,
     Document,
@@ -88,10 +89,11 @@ class AsyncReadwiseV3Client:
         if with_content:
             params["withHtmlContent"] = "true"
 
-        async for item in self._client.paginate(
+        async for item in paginate_async(
+            self._client.get,
             f"{self._client.config.v3_base_url}/list/",
             params=params,
-            cursor_key="nextPageCursor",
+            decoder=ReaderV3Page(),
         ):
             yield Document.model_validate(item)
 
@@ -237,9 +239,10 @@ class AsyncReadwiseV3Client:
         Yields:
             DocumentTag objects with key and name.
         """
-        async for item in self._client.paginate(
+        async for item in paginate_async(
+            self._client.get,
             f"{self._client.config.v3_base_url}/tags/",
-            cursor_key="nextPageCursor",
+            decoder=ReaderV3Page(),
         ):
             yield DocumentTag.model_validate(item)
 

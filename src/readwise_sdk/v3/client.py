@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from readwise_sdk.client import ReadwiseClient
+from readwise_sdk.transport.pagination import ReaderV3Page, paginate
 from readwise_sdk.v3.models import (
     CreateDocumentResult,
     Document,
@@ -68,10 +69,11 @@ class ReadwiseV3Client:
         if with_content:
             params["withHtmlContent"] = "true"
 
-        for item in self._client.paginate(
+        for item in paginate(
+            self._client.get,
             f"{self._client.config.v3_base_url}/list/",
             params=params,
-            cursor_key="nextPageCursor",
+            decoder=ReaderV3Page(),
         ):
             yield Document.model_validate(item)
 
@@ -213,9 +215,10 @@ class ReadwiseV3Client:
         Yields:
             DocumentTag objects with key and name.
         """
-        for item in self._client.paginate(
+        for item in paginate(
+            self._client.get,
             f"{self._client.config.v3_base_url}/tags/",
-            cursor_key="nextPageCursor",
+            decoder=ReaderV3Page(),
         ):
             yield DocumentTag.model_validate(item)
 
