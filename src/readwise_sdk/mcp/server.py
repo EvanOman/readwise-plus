@@ -9,10 +9,8 @@ Auth: reads ``READWISE_API_KEY`` from the environment, falling back to a
 
 from __future__ import annotations
 
-import json
 import os
 from datetime import datetime
-from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -21,8 +19,32 @@ from readwise_sdk import (
     NotFoundError,
     ReadwiseError,
 )
-from readwise_sdk.v2.models import HighlightCreate
-from readwise_sdk.v3.models import DocumentCreate, DocumentLocation, DocumentUpdate
+from readwise_sdk.mcp.output import (
+    _book_summary,
+    _doc_full,
+    _doc_summary,
+    _document_not_found,
+    _error_result,
+    _export_summary,
+    _highlight_summary,
+    _json_result,
+)
+from readwise_sdk.models import BookSearch, DocumentSearch, HighlightSearch
+from readwise_sdk.operations import ReadwiseService
+from readwise_sdk.resources.v2 import (
+    AsyncBooksResource,
+    AsyncExportResource,
+    AsyncHighlightsResource,
+    AsyncTagsResource,
+)
+from readwise_sdk.resources.v3 import AsyncDocumentsResource
+from readwise_sdk.v2.models import BookCategory
+from readwise_sdk.v3.models import (
+    DocumentCategory,
+    DocumentCreate,
+    DocumentLocation,
+    DocumentUpdate,
+)
 
 # ---------------------------------------------------------------------------
 # Server + client setup
@@ -66,85 +88,23 @@ def _client() -> AsyncReadwiseClient:
     return AsyncReadwiseClient(api_key=_get_api_key())
 
 
+def _service(client: AsyncReadwiseClient) -> ReadwiseService:
+    """Compose canonical operations over one tool call's client transport."""
+    transport = client._transport
+    highlights = AsyncHighlightsResource(transport)
+    return ReadwiseService(
+        documents=AsyncDocumentsResource(transport),
+        highlights=highlights,
+        highlight_tags=AsyncTagsResource(transport),
+        export=AsyncExportResource(transport),
+        books=AsyncBooksResource(transport),
+        book_highlights=highlights,
+    )
+
+
 def main() -> None:
     """Console-script entry point: run the MCP server over stdio."""
     mcp.run()
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _doc_summary(doc: Any) -> dict[str, Any]:
-    """Compact summary of a Document for listing results."""
-    return {
-        k: v
-        for k, v in {
-            "id": doc.id,
-            "title": doc.title,
-            "author": doc.author,
-            "url": doc.source_url or doc.url,
-            "category": doc.category.value if doc.category else None,
-            "location": doc.location.value if doc.location else None,
-            "tags": doc.tags or None,
-            "word_count": doc.word_count,
-            "reading_progress": doc.reading_progress,
-            "site_name": doc.site_name,
-            "published_date": doc.published_date.isoformat() if doc.published_date else None,
-            "saved_at": doc.saved_at.isoformat() if doc.saved_at else None,
-        }.items()
-        if v is not None
-    }
-
-
-def _doc_full(doc: Any) -> dict[str, Any]:
-    """Full document representation including content."""
-    result = _doc_summary(doc)
-    if doc.content:
-        result["content"] = doc.content
-    if doc.summary:
-        result["summary"] = doc.summary
-    if doc.notes:
-        result["notes"] = doc.notes
-    return result
-
-
-def _highlight_summary(h: Any) -> dict[str, Any]:
-    """Compact summary of a Highlight."""
-    return {
-        k: v
-        for k, v in {
-            "id": h.id,
-            "text": h.text,
-            "note": h.note,
-            "book_id": h.book_id,
-            "color": h.color.value if h.color else None,
-            "location": h.location,
-            "highlighted_at": h.highlighted_at.isoformat() if h.highlighted_at else None,
-            "tags": [t.name for t in h.tags] if h.tags else None,
-        }.items()
-        if v is not None
-    }
-
-
-def _book_summary(b: Any) -> dict[str, Any]:
-    """Compact summary of a Book."""
-    return {
-        k: v
-        for k, v in {
-            "id": b.id,
-            "title": b.title,
-            "author": b.author,
-            "category": b.category.value if b.category else None,
-            "source": b.source,
-            "num_highlights": b.num_highlights,
-            "source_url": b.source_url,
-            "cover_image_url": b.cover_image_url,
-            "last_highlight_at": (b.last_highlight_at.isoformat() if b.last_highlight_at else None),
-        }.items()
-        if v is not None
-    }
 
 
 def _parse_iso_datetime(s: str | None) -> datetime | None:
@@ -155,11 +115,6 @@ def _parse_iso_datetime(s: str | None) -> datetime | None:
         return datetime.fromisoformat(s)
     except (ValueError, TypeError):
         return None
-
-
-def _json_result(data: Any) -> str:
-    """Serialize a result to a compact JSON string."""
-    return json.dumps(data, ensure_ascii=False, default=str)
 
 
 # ---------------------------------------------------------------------------
@@ -204,9 +159,7 @@ async def save_to_reader(
         try:
             doc_location = DocumentLocation(location)
         except ValueError:
-            return _json_result(
-                {"error": f"Invalid location '{location}'. Use: new, later, archive, feed."}
-            )
+            return _error_result(f"Invalid location '{location}'. Use: new, later, archive, feed.")
 
     doc = DocumentCreate(
         url=url,
@@ -222,10 +175,10 @@ async def save_to_reader(
 
     async with _client() as client:
         try:
-            result = await client.v3.create_document(doc)
+            result = await _service(client).documents.save(doc)
             return _json_result({"id": result.id, "url": result.url})
         except ReadwiseError as e:
-            return _json_result({"error": str(e)})
+            return _error_result(e)
 
 
 @mcp.tool()
@@ -253,8 +206,6 @@ async def search_documents(
     Returns:
         JSON array of document summaries.
     """
-    from readwise_sdk.v3.models import DocumentCategory, DocumentLocation
-
     limit = min(max(limit, 1), 100)
     doc_location = None
     doc_category = None
@@ -263,33 +214,28 @@ async def search_documents(
         try:
             doc_location = DocumentLocation(location)
         except ValueError:
-            return _json_result({"error": f"Invalid location '{location}'."})
+            return _error_result(f"Invalid location '{location}'.")
     if category:
         try:
             doc_category = DocumentCategory(category)
         except ValueError:
-            return _json_result({"error": f"Invalid category '{category}'."})
+            return _error_result(f"Invalid category '{category}'.")
 
-    dt_after = _parse_iso_datetime(updated_after)
-    query_lower = query.lower() if query else None
+    search = DocumentSearch.model_construct(
+        location=doc_location,
+        category=doc_category,
+        updated_after=_parse_iso_datetime(updated_after),
+        tags=tuple(tags or ()),
+        query=query,
+        limit=limit,
+    )
 
     async with _client() as client:
         try:
-            results: list[dict[str, Any]] = []
-            async for doc in client.v3.list_documents(
-                location=doc_location,
-                category=doc_category,
-                updated_after=dt_after,
-                tags=tags,
-            ):
-                if query_lower and doc.title and query_lower not in doc.title.lower():
-                    continue
-                results.append(_doc_summary(doc))
-                if len(results) >= limit:
-                    break
-            return _json_result(results)
+            result = await _service(client).documents.search(search)
+            return _json_result([_doc_summary(doc) for doc in result.items])
         except ReadwiseError as e:
-            return _json_result({"error": str(e)})
+            return _error_result(e)
 
 
 @mcp.tool()
@@ -304,14 +250,14 @@ async def get_document(document_id: str) -> str:
     """
     async with _client() as client:
         try:
-            doc = await client.v3.get_document(document_id, with_content=True)
+            doc = await _service(client).documents.get(document_id, with_content=True)
             if doc is None:
-                return _json_result({"error": f"Document '{document_id}' not found."})
+                return _document_not_found(document_id)
             return _json_result(_doc_full(doc))
         except NotFoundError:
-            return _json_result({"error": f"Document '{document_id}' not found."})
+            return _document_not_found(document_id)
         except ReadwiseError as e:
-            return _json_result({"error": str(e)})
+            return _error_result(e)
 
 
 @mcp.tool()
@@ -351,7 +297,7 @@ async def update_document(
         try:
             doc_location = DocumentLocation(location)
         except ValueError:
-            return _json_result({"error": f"Invalid location '{location}'."})
+            return _error_result(f"Invalid location '{location}'.")
 
     update = DocumentUpdate(
         title=title,
@@ -364,12 +310,12 @@ async def update_document(
 
     async with _client() as client:
         try:
-            result = await client.v3.update_document(document_id, update)
+            result = await _service(client).documents.update(document_id, update)
             return _json_result({"id": result.id, "url": result.url})
         except NotFoundError:
-            return _json_result({"error": f"Document '{document_id}' not found."})
+            return _document_not_found(document_id)
         except ReadwiseError as e:
-            return _json_result({"error": str(e)})
+            return _error_result(e)
 
 
 @mcp.tool()
@@ -386,12 +332,12 @@ async def delete_document(document_id: str) -> str:
     """
     async with _client() as client:
         try:
-            await client.v3.delete_document(document_id)
+            await _service(client).documents.delete(document_id)
             return _json_result({"deleted": document_id})
         except NotFoundError:
-            return _json_result({"error": f"Document '{document_id}' not found."})
+            return _document_not_found(document_id)
         except ReadwiseError as e:
-            return _json_result({"error": str(e)})
+            return _error_result(e)
 
 
 # ---------------------------------------------------------------------------
@@ -418,24 +364,19 @@ async def get_highlights(
         JSON array of highlights.
     """
     limit = min(max(limit, 1), 200)
-    dt_after = _parse_iso_datetime(updated_after)
-    query_lower = query.lower() if query else None
+    search = HighlightSearch.model_construct(
+        book_id=book_id,
+        updated_after=_parse_iso_datetime(updated_after),
+        query=query,
+        limit=limit,
+    )
 
     async with _client() as client:
         try:
-            results: list[dict[str, Any]] = []
-            async for h in client.v2.list_highlights(
-                book_id=book_id,
-                updated_after=dt_after,
-            ):
-                if query_lower and query_lower not in h.text.lower():
-                    continue
-                results.append(_highlight_summary(h))
-                if len(results) >= limit:
-                    break
-            return _json_result(results)
+            result = await _service(client).highlights.search(search)
+            return _json_result([_highlight_summary(item) for item in result.items])
         except ReadwiseError as e:
-            return _json_result({"error": str(e)})
+            return _error_result(e)
 
 
 @mcp.tool()
@@ -457,31 +398,16 @@ async def export_highlights(
     Returns:
         JSON array of books, each containing a highlights array.
     """
-    limit = min(max(limit, 1), 100)
-    dt_after = _parse_iso_datetime(updated_after)
-
     async with _client() as client:
         try:
-            results: list[dict[str, Any]] = []
-            async for book in client.v2.export_highlights(
-                updated_after=dt_after,
+            result = await _service(client).highlights.export(
+                updated_after=_parse_iso_datetime(updated_after),
                 book_ids=book_ids,
-            ):
-                book_data: dict[str, Any] = {
-                    "book_id": book.user_book_id,
-                    "title": book.title,
-                    "author": book.author,
-                    "category": book.category.value if book.category else None,
-                    "source": book.source,
-                    "source_url": book.source_url,
-                    "highlights": [_highlight_summary(h) for h in book.highlights],
-                }
-                results.append({k: v for k, v in book_data.items() if v is not None})
-                if len(results) >= limit:
-                    break
-            return _json_result(results)
+                limit=limit,
+            )
+            return _json_result([_export_summary(item) for item in result.items])
         except ReadwiseError as e:
-            return _json_result({"error": str(e)})
+            return _error_result(e)
 
 
 @mcp.tool()
@@ -512,33 +438,29 @@ async def create_highlight(
     Returns:
         JSON with created highlight IDs.
     """
-    from readwise_sdk.v2.models import BookCategory
-
     book_category = None
     if category:
         try:
             book_category = BookCategory(category)
         except ValueError:
-            return _json_result(
-                {"error": f"Invalid category '{category}'. Use: books, articles, tweets, podcasts."}
+            return _error_result(
+                f"Invalid category '{category}'. Use: books, articles, tweets, podcasts."
             )
-
-    highlight = HighlightCreate(
-        text=text[:8191],
-        title=title,
-        author=author,
-        source_url=source_url,
-        note=note,
-        category=book_category,
-        highlighted_at=_parse_iso_datetime(highlighted_at),
-    )
 
     async with _client() as client:
         try:
-            ids = await client.v2.create_highlights([highlight])
-            return _json_result({"created_highlight_ids": ids})
+            result = await _service(client).highlights.create_from_fields(
+                text=text,
+                title=title,
+                author=author,
+                source_url=source_url,
+                note=note,
+                category=book_category,
+                highlighted_at=_parse_iso_datetime(highlighted_at),
+            )
+            return _json_result({"created_highlight_ids": result.ids})
         except ReadwiseError as e:
-            return _json_result({"error": str(e)})
+            return _error_result(e)
 
 
 # ---------------------------------------------------------------------------
@@ -564,8 +486,6 @@ async def get_books(
     Returns:
         JSON array of book summaries.
     """
-    from readwise_sdk.v2.models import BookCategory
-
     limit = min(max(limit, 1), 100)
     book_category = None
 
@@ -573,22 +493,19 @@ async def get_books(
         try:
             book_category = BookCategory(category)
         except ValueError:
-            return _json_result({"error": f"Invalid category '{category}'."})
+            return _error_result(f"Invalid category '{category}'.")
 
-    query_lower = query.lower() if query else None
+    search = BookSearch.model_construct(
+        category=book_category,
+        source=source,
+        updated_after=None,
+        query=query,
+        limit=limit,
+    )
 
     async with _client() as client:
         try:
-            results: list[dict[str, Any]] = []
-            async for book in client.v2.list_books(
-                category=book_category,
-                source=source,
-            ):
-                if query_lower and query_lower not in book.title.lower():
-                    continue
-                results.append(_book_summary(book))
-                if len(results) >= limit:
-                    break
-            return _json_result(results)
+            result = await _service(client).books.search(search)
+            return _json_result([_book_summary(book) for book in result.items])
         except ReadwiseError as e:
-            return _json_result({"error": str(e)})
+            return _error_result(e)
