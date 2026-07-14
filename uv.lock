@@ -9,7 +9,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-07-07T04:53:56.535333344Z"
+exclude-newer = "2026-07-07T05:26:34.329950385Z"
 exclude-newer-span = "P7D"
 
 [[package]]
@@ -1203,8 +1203,10 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "respx" },
+    { name = "rich" },
     { name = "ruff" },
     { name = "ty" },
+    { name = "typer" },
 ]
 docs = [
     { name = "mkdocs" },
@@ -1234,8 +1236,10 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "respx", specifier = ">=0.22.0" },
+    { name = "rich", specifier = ">=14.0.0" },
     { name = "ruff", specifier = ">=0.14.0" },
     { name = "ty", specifier = ">=0.0.8" },
+    { name = "typer", specifier = ">=0.21.0" },
 ]
 docs = [
     { name = "mkdocs", specifier = ">=1.6.1" },
