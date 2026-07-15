@@ -631,6 +631,42 @@ class TestSyncCommands:
         state_data = json.loads(state_file.read_text())
         assert state_data["total_syncs"] == 1
 
+    def test_sync_status_reads_a_legacy_state_file(self, tmp_path) -> None:
+        """sync status reports checkpoints from existing unversioned state."""
+        state_file = tmp_path / "sync.json"
+        state_file.write_text(
+            json.dumps(
+                {
+                    "last_highlight_sync": "2025-02-03T04:05:06+00:00",
+                    "last_book_sync": None,
+                    "last_document_sync": None,
+                    "total_syncs": 7,
+                    "last_sync_time": "2025-02-03T04:05:06+00:00",
+                }
+            )
+        )
+
+        result = runner.invoke(app, ["sync", "status", "--state-file", str(state_file)])
+
+        assert result.exit_code == 0
+        assert "2025-02-03T04:05:06+00:00" in result.output
+
+    def test_sync_reset_writes_new_versioned_state(self, tmp_path) -> None:
+        """sync reset clears the checkpoint through the canonical state store."""
+        state_file = tmp_path / "sync.json"
+
+        result = runner.invoke(app, ["sync", "reset", "--state-file", str(state_file)])
+
+        assert result.exit_code == 0
+        assert "Sync state reset" in result.output
+        assert json.loads(state_file.read_text()) == {
+            "version": 1,
+            "last_highlight_sync": None,
+            "last_book_sync": None,
+            "last_document_sync": None,
+            "last_sync_time": None,
+        }
+
 
 # ---------------------------------------------------------------------------
 # Digest commands

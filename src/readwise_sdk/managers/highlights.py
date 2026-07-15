@@ -1,10 +1,17 @@
-"""High-level highlight management operations."""
+"""Legacy highlight manager compatibility shim."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING
 
+from readwise_sdk.operations.compat import (
+    SyncHighlightsResource,
+    bulk_result_map,
+    iter_sync,
+    run_sync,
+)
+from readwise_sdk.operations.highlights import HighlightOperations
 from readwise_sdk.v2.models import Highlight, HighlightCreate
 
 if TYPE_CHECKING:
@@ -14,23 +21,15 @@ if TYPE_CHECKING:
 
 
 class HighlightManager:
-    """High-level operations for managing highlights."""
+    """Compatibility wrapper over canonical highlight operations."""
 
     def __init__(self, client: ReadwiseClient) -> None:
-        """Initialize the highlight manager.
-
-        Args:
-            client: The Readwise client.
-        """
         self._client = client
+        resource = SyncHighlightsResource(client)
+        self._operations = HighlightOperations(resource, resource, resource)
 
     def get_all_highlights(self) -> list[Highlight]:
-        """Get all highlights, exhausting pagination.
-
-        Returns:
-            List of all highlights.
-        """
-        return list(self._client.v2.list_highlights())
+        return run_sync(self._operations.list())
 
     def get_highlights_since(
         self,
@@ -39,44 +38,13 @@ class HighlightManager:
         hours: int | None = None,
         since: datetime | None = None,
     ) -> list[Highlight]:
-        """Get highlights updated since a given time.
-
-        Args:
-            days: Number of days to look back.
-            hours: Number of hours to look back.
-            since: Specific datetime to look back to.
-
-        Returns:
-            List of highlights updated since the given time.
-        """
-        if since is None:
-            if days is not None:
-                since = datetime.now(UTC) - timedelta(days=days)
-            elif hours is not None:
-                since = datetime.now(UTC) - timedelta(hours=hours)
-            else:
-                raise ValueError("Must specify days, hours, or since")
-
-        return list(self._client.v2.list_highlights(updated_after=since))
+        return run_sync(self._operations.since(days=days, hours=hours, since=since))
 
     def get_highlights_by_book(self, book_id: int) -> list[Highlight]:
-        """Get all highlights for a specific book.
-
-        Args:
-            book_id: The book ID.
-
-        Returns:
-            List of highlights for the book.
-        """
-        return list(self._client.v2.list_highlights(book_id=book_id))
+        return run_sync(self._operations.list(book_id=book_id))
 
     def get_highlights_with_notes(self) -> list[Highlight]:
-        """Get all highlights that have notes/annotations.
-
-        Returns:
-            List of highlights with notes.
-        """
-        return [h for h in self._client.v2.list_highlights() if h.note]
+        return run_sync(self._operations.with_notes())
 
     def search_highlights(
         self,
@@ -84,93 +52,21 @@ class HighlightManager:
         *,
         case_sensitive: bool = False,
     ) -> list[Highlight]:
-        """Search highlights by text content.
-
-        Args:
-            query: The search query.
-            case_sensitive: Whether to perform case-sensitive search.
-
-        Returns:
-            List of matching highlights.
-        """
-        if not case_sensitive:
-            query = query.lower()
-
-        results = []
-        for highlight in self._client.v2.list_highlights():
-            text = highlight.text if case_sensitive else highlight.text.lower()
-            note = (highlight.note or "") if case_sensitive else (highlight.note or "").lower()
-
-            if query in text or query in note:
-                results.append(highlight)
-
-        return results
+        return run_sync(self._operations.search_items(query, case_sensitive=case_sensitive))
 
     def filter_highlights(
         self,
         predicate: Callable[[Highlight], bool],
     ) -> Iterator[Highlight]:
-        """Filter highlights using a custom predicate.
+        return iter_sync(self._operations.filter(predicate))
 
-        Args:
-            predicate: A function that returns True for highlights to include.
+    def bulk_tag(self, highlight_ids: list[int], tag: str) -> dict[int, bool]:
+        result = run_sync(self._operations.bulk_tag(highlight_ids, tag))
+        return bulk_result_map(highlight_ids, result)
 
-        Yields:
-            Highlights that match the predicate.
-        """
-        for highlight in self._client.v2.list_highlights():
-            if predicate(highlight):
-                yield highlight
-
-    def bulk_tag(
-        self,
-        highlight_ids: list[int],
-        tag: str,
-    ) -> dict[int, bool]:
-        """Add a tag to multiple highlights.
-
-        Args:
-            highlight_ids: List of highlight IDs to tag.
-            tag: The tag name to add.
-
-        Returns:
-            Dict mapping highlight ID to success status.
-        """
-        results: dict[int, bool] = {}
-        for hid in highlight_ids:
-            try:
-                self._client.v2.create_highlight_tag(hid, tag)
-                results[hid] = True
-            except Exception:
-                results[hid] = False
-        return results
-
-    def bulk_untag(
-        self,
-        highlight_ids: list[int],
-        tag: str,
-    ) -> dict[int, bool]:
-        """Remove a tag from multiple highlights.
-
-        Args:
-            highlight_ids: List of highlight IDs.
-            tag: The tag name to remove.
-
-        Returns:
-            Dict mapping highlight ID to success status.
-        """
-        results: dict[int, bool] = {}
-        for hid in highlight_ids:
-            try:
-                # Find the tag ID first
-                tags = list(self._client.v2.list_highlight_tags(hid))
-                tag_obj = next((t for t in tags if t.name == tag), None)
-                if tag_obj:
-                    self._client.v2.delete_highlight_tag(hid, tag_obj.id)
-                results[hid] = True
-            except Exception:
-                results[hid] = False
-        return results
+    def bulk_untag(self, highlight_ids: list[int], tag: str) -> dict[int, bool]:
+        result = run_sync(self._operations.bulk_untag(highlight_ids, tag))
+        return bulk_result_map(highlight_ids, result)
 
     def create_highlight(
         self,
@@ -181,35 +77,15 @@ class HighlightManager:
         note: str | None = None,
         source_url: str | None = None,
     ) -> int:
-        """Create a single highlight (convenience method).
-
-        Args:
-            text: The highlight text.
-            title: The source title.
-            author: The source author.
-            note: An optional note/annotation.
-            source_url: The source URL.
-
-        Returns:
-            The created highlight ID.
-        """
-        highlight = HighlightCreate(
+        request = HighlightCreate(
             text=text,
             title=title,
             author=author,
             note=note,
             source_url=source_url,
         )
-        ids = self._client.v2.create_highlights([highlight])
+        ids = run_sync(self._operations.create(request))
         return ids[0] if ids else 0
 
     def get_highlight_count(self) -> int:
-        """Get the total number of highlights.
-
-        Returns:
-            Total highlight count.
-        """
-        count = 0
-        for _ in self._client.v2.list_highlights():
-            count += 1
-        return count
+        return run_sync(self._operations.count())
