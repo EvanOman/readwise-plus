@@ -1,232 +1,93 @@
 # readwise-plus
 
-> Comprehensive Python SDK for Readwise with high-level workflow abstractions. Provides both low-level API access and high-level managers for common operations on highlights, books, and documents.
+> Comprehensive Python SDK for Readwise. Wraps the Readwise API (v2, highlights/books) and the Reader API (v3, documents) behind one concept-oriented interface, plus a CLI and an MCP server. Built for Python 3.12+.
 
-This SDK wraps the Readwise API (v2) and Reader API (v3) in type-safe Pydantic models with automatic pagination, rate limit handling, and error recovery. Built for Python 3.12+.
+The preferred entry points are `Readwise` (sync) and `AsyncReadwise` (async): concept-oriented facades with `.documents`, `.highlights`, `.books`, `.tags`, `.digests`, `.sync`, and a `.raw.v2`/`.raw.v3` escape hatch for the low-level clients. The CLI and MCP server call the same underlying operations layer, so behavior is consistent everywhere. The pre-0.3 `ReadwiseClient`/`.v2`/`.v3`/managers/workflows/contrib API still works unchanged as a compatibility surface — see MIGRATION.md for the mapping and deprecation timeline.
 
 ## Core Concepts
 
-- **ReadwiseClient**: Main entry point that provides access to both v2 and v3 API clients
-- **V2 API**: Readwise API for highlights, books, tags, exports, and daily review
-- **V3 API**: Reader API for documents, reading list management, and document tagging
-- **Managers**: High-level abstractions for common workflows (HighlightManager, BookManager, etc.)
-- **Workflows**: Task-oriented utilities for digests, inbox management, background polling, and tag operations
-- **Contrib**: Convenience interfaces designed for specific integration patterns
+- **Readwise / AsyncReadwise**: preferred SDK facades; concept-oriented attributes over one shared operations layer
+- **Operations layer**: `documents`, `highlights`, `books`, `tags`, `digests`, `sync` — async-first, shared by the facade, CLI, and MCP server
+- **Raw escape hatch**: `.raw.v2` / `.raw.v3` for direct low-level API access
+- **Compatibility API**: `ReadwiseClient`/`AsyncReadwiseClient`, managers, workflows, contrib — unchanged pre-0.3 surfaces, not scheduled for removal before 1.0
 
 ## Quick Start
 
 ```python
-from readwise_sdk import ReadwiseClient
+from readwise_sdk import Readwise
+from readwise_sdk.models import DocumentSearch
 
-# Initialize with API token (or use READWISE_API_KEY env var)
-client = ReadwiseClient(api_key="your_token")
+with Readwise() as readwise:  # reads READWISE_API_KEY from the environment
+    result = readwise.documents.search(DocumentSearch(query="python", limit=20))
+    for doc in result.items:
+        print(doc.title)
 
-# V2 API - Highlights and books
-for highlight in client.v2.list_highlights():
-    print(highlight.text)
+# Async
+from readwise_sdk import AsyncReadwise
 
-# V3 API - Reader documents
-for doc in client.v3.get_inbox():
-    print(doc.title)
-
-# High-level managers
-from readwise_sdk import HighlightManager
-manager = HighlightManager(client)
-recent = manager.get_recent_highlights(days=7)
+async with AsyncReadwise() as readwise:
+    result = await readwise.documents.search(DocumentSearch(query="python"))
 ```
 
 ## API Reference
 
-### Client
+### Facade (`Readwise` / `AsyncReadwise`)
 
-- ReadwiseClient: Main client class with `v2` and `v3` properties for API access
-- AsyncReadwiseClient: Async version of the client
+- `.documents.search(DocumentSearch)`, `.get(id, with_content=)`, `.save(DocumentCreate)`, `.update(id, DocumentUpdate)`, `.delete(id)`, `.move(id, location)`, `.set_tags`/`.add_tag`/`.remove_tag`, `.inbox()`/`.later()`/`.archive()`, `.statistics()`, `.bulk_move`, `.bulk_set_tags`
+- `.highlights.search(HighlightSearch)`, `.list(...)`, `.get(id)`, `.create(HighlightCreate)`, `.create_from_fields(...)`, `.update(id, HighlightUpdate)`, `.delete(id)`, `.search_items(query)`, `.since(days=)`, `.with_notes()`, `.bulk_tag`/`.bulk_untag`, `.export(...)`, `.push_batch(...)`, `.update_batch(...)`, `.delete_batch(...)`
+- `.books.search(BookSearch)`, `.list(...)`, `.get(id)`, `.with_highlights(id)`, `.recent(...)`, `.statistics()`, `.search_items(query)`
+- `.tags.auto_tag_highlights(patterns)`, `.get_tag_report()`, `.merge_tags`, `.rename_tag`, `.delete_tag`, `.get_highlights_by_tag`, `.get_untagged_highlights`
+- `.digests.daily()`, `.weekly()`, `.book(id)`, `.custom(...)`
+- `.sync.full(...)`, `.incremental(...)`, `.poll_once(...)`, `.batch_highlights/.batch_books/.batch_documents(...)`, `.status()`, `.reset()`
+- `.raw.v2`, `.raw.v3`: the same low-level clients described under Compatibility API below
 
-### V2 API (Readwise)
+Models: import search inputs from `readwise_sdk.models` (`DocumentSearch`, `HighlightSearch`, `BookSearch`); import result/domain types from `readwise_sdk.models.reader` (`Document`, `DocumentCreate`, `DocumentUpdate`, `DocumentCategory`, `DocumentLocation`) and `readwise_sdk.models.readwise` (`Highlight`, `HighlightCreate`, `HighlightUpdate`, `Book`, `BookCategory`, `HighlightColor`, `Tag`).
 
-Models:
-- Highlight: A highlight with text, notes, location, tags, and metadata
-- Book: A source (book, article, tweet, podcast) containing highlights
-- Tag: A tag attached to highlights or books
-- BookCategory: Enum for source categories (books, articles, tweets, podcasts, supplementals)
-- HighlightColor: Enum for highlight colors (yellow, blue, pink, orange, green, purple)
-- DailyReview: Container for daily review highlights
-- HighlightCreate: Data for creating new highlights
-- HighlightUpdate: Data for updating existing highlights
+### Compatibility API
 
-Methods (client.v2.*):
-- list_highlights(updated_after, book_id, page_size): Iterate all highlights
-- get_highlight(highlight_id): Get single highlight by ID
-- create_highlights(highlights): Create multiple highlights
-- update_highlight(highlight_id, update): Update a highlight
-- delete_highlight(highlight_id): Delete a highlight
-- list_books(category, updated_after, page_size): Iterate all books
-- get_book(book_id): Get single book by ID
-- list_highlight_tags(highlight_id): Get tags for a highlight
-- create_highlight_tag(highlight_id, tag_name): Add tag to highlight
-- delete_highlight_tag(highlight_id, tag_id): Remove tag from highlight
-- list_book_tags(book_id): Get tags for a book
-- create_book_tag(book_id, tag_name): Add tag to book
-- export_highlights(updated_after, ids): Export highlights with full book data
-- get_daily_review(): Get today's daily review highlights
+`ReadwiseClient`/`AsyncReadwiseClient` (`from readwise_sdk import ReadwiseClient`):
 
-### V3 API (Reader)
+- `client.v2.list_highlights(updated_after, book_id, page_size)`, `.get_highlight(id)`, `.create_highlights(highlights)`, `.update_highlight(id, update)`, `.delete_highlight(id)`, `.list_books(...)`, `.get_book(id)`, `.export_highlights(...)`, `.get_daily_review()`
+- `client.v3.list_documents(location, category, updated_after, with_content)`, `.get_document(id, with_content)`, `.create_document(...)`, `.save_url(url, ...)`, `.update_document(id, update)`, `.delete_document(id)`, `.move_to_later/.archive/.move_to_inbox(id)`, `.get_inbox/.get_reading_list/.get_archive()`
 
-Models:
-- Document: A Reader document with content, location, tags, and reading progress
-- DocumentTag: A tag on a Reader document
-- DocumentCategory: Enum (article, email, rss, highlight, note, pdf, epub, tweet, video)
-- DocumentLocation: Enum (new, later, shortlist, archive, feed)
-- DocumentCreate: Data for creating documents
-- DocumentUpdate: Data for updating documents
-- CreateDocumentResult: Result of document creation with ID and URL
+Managers (`from readwise_sdk.managers import ...`): `HighlightManager` (`get_highlights_since`, `get_highlights_by_book`, `search_highlights`, `bulk_tag`), `BookManager` (`get_books_by_category`, `get_book_with_highlights`, `get_reading_stats`), `DocumentManager` (`get_inbox`, `archive`, `get_inbox_stats`), `SyncManager` (`full_sync`, `incremental_sync`).
 
-Methods (client.v3.*):
-- list_documents(location, category, updated_after, with_content): Iterate documents
-- get_document(document_id, with_content): Get single document
-- create_document(document): Create new document
-- save_url(url, location, tags, notes, author, title): Quick URL save
-- update_document(document_id, update): Update document
-- delete_document(document_id): Delete document
-- move_to_later(document_id): Move to reading list
-- archive(document_id): Archive document
-- move_to_inbox(document_id): Move back to inbox
-- list_tags(): List all document tags
-- tag_document(document_id, tag): Add tag to document
-- add_tag(document_id, tag): Alias for tag_document
-- get_inbox(): Get inbox documents
-- get_reading_list(): Get reading list documents
-- get_archive(): Get archived documents
+Workflows (`from readwise_sdk.workflows import ...`): `DigestBuilder` (`create_daily_digest`, `create_weekly_digest`, `create_book_digest`, `create_custom_digest`), `TagWorkflow` (`auto_tag_highlights` with `TagPattern(pattern, tag, case_sensitive=, match_in_notes=, match_in_text=)`, `merge_tags`, `rename_tag`), `ReadingInbox` (`get_queue_stats`, `smart_archive`, `get_inbox_by_priority`), `BackgroundPoller` (`poll_once`, `start`, `stop`).
 
-### Managers
-
-HighlightManager:
-- get_all_highlights(): Get all highlights
-- get_highlights_by_book(book_id): Get highlights for a specific book
-- get_recent_highlights(days): Get highlights from last N days
-- get_highlights_with_notes(): Get highlights that have notes
-- search_highlights(query): Search highlight text
-- bulk_tag(highlight_ids, tag_name): Add tag to multiple highlights
-- create_highlight(text, title, author, source_url, note, category): Create new highlight
-- get_highlight_count(): Get total highlight count
-
-BookManager:
-- get_all_books(): Get all books
-- get_books_by_category(category): Filter by category
-- get_book_with_highlights(book_id): Get book with all its highlights
-- get_recent_books(days, limit): Get recently updated books
-- search_books(query): Search book titles and authors
-- get_reading_stats(): Get aggregate statistics
-
-DocumentManager:
-- get_inbox(): Get inbox documents
-- get_reading_list(): Get reading list documents
-- get_archive(): Get archived documents
-- get_documents_by_category(category): Filter by category
-- move_to_reading_list(document_id): Move to reading list
-- bulk_archive(document_ids): Archive multiple documents
-- search_documents(query): Search document titles
-- get_unread_count(): Get count of unread documents
-- get_inbox_stats(): Get inbox statistics
-
-SyncManager:
-- full_sync(include_highlights, include_books, include_documents): Full data sync
-- incremental_sync(...): Sync only changes since last sync
-- reset_state(): Reset sync state for fresh start
-- state: SyncState property with sync timestamps and totals
-
-### Workflows
-
-DigestBuilder:
-- create_daily_digest(output_format): Create digest of today's highlights
-- create_weekly_digest(output_format): Create digest of week's highlights
-- create_book_digest(book_id, output_format): Create digest for specific book
-- DigestFormat: Enum (MARKDOWN, JSON, CSV)
-
-ReadingInbox:
-- get_queue_stats(): Get inbox statistics
-- get_stale_items(days): Get items older than N days
-- get_inbox_by_priority(): Get prioritized inbox
-- search_inbox(query): Search inbox
-- smart_archive(rules, dry_run): Archive by rules
-- move_to_reading_list(document_ids): Move items to reading list
-- add_archive_rule(rule): Add archiving rule
-- ArchiveRules.create_old_item_rule(days): Create age-based rule
-- ArchiveRules.create_category_rule(category): Create category-based rule
-- ArchiveRules.create_title_pattern_rule(pattern): Create pattern-based rule
-- ArchiveRules.create_domain_rule(domain): Create domain-based rule
-
-BackgroundPoller:
-- poll_once(): Manually trigger one poll cycle
-- start(interval_seconds): Start background polling
-- stop(): Stop polling
-- on_new_highlight(callback): Register highlight callback
-- on_new_book(callback): Register book callback
-- on_new_document(callback): Register document callback
-- on_error(callback): Register error callback
-
-TagWorkflow:
-- auto_tag_highlights(patterns, dry_run): Auto-tag based on patterns
-- get_tag_report(): Get tag usage statistics
-- get_highlights_by_tag(tag_name): Get highlights with specific tag
-- get_untagged_highlights(): Get highlights without tags
-- merge_tags(source_tags, target_tag, dry_run): Merge tags
-- rename_tag(old_name, new_name, dry_run): Rename tag
-- delete_tag(tag_name, dry_run): Delete tag
-- TagPattern(pattern, tag_name, search_in_notes): Pattern for auto-tagging
-
-### Contrib Interfaces
-
-HighlightPusher (for pushing highlights TO Readwise):
-- push(text, title, author, note, category, ...): Push single highlight
-- push_highlight(highlight): Push SimpleHighlight object
-- push_batch(highlights): Push multiple highlights
-- validate_token(): Validate API token
-- SimpleHighlight: Dataclass for highlight data
-- PushResult: Result with success status and IDs
-
-DocumentImporter (for pulling documents FROM Reader):
-- import_document(document_id, with_content): Import single document
-- import_batch(document_ids, with_content): Import multiple documents
-- list_inbox(limit, with_content): List inbox with metadata extraction
-- list_reading_list(limit, with_content): List reading list
-- list_archive(limit, with_content): List archive
-- list_updated_since(since, limit, with_content): List by update time
-- save_url(url, **kwargs): Save URL to Reader
-- ImportedDocument: Document with extracted metadata (domain, word_count, reading_time)
-- ImportResult: Result with success status and document
-
-BatchSync (for efficient synchronization with state tracking):
-- sync_highlights(on_item, on_batch, full_sync): Sync highlights with callbacks
-- sync_books(on_item, on_batch, full_sync): Sync books with callbacks
-- sync_all(on_highlight, on_book, full_sync): Sync both
-- reset_state(): Reset sync state
-- get_stats(): Get sync statistics
-- state: SyncState property
-- BatchSyncConfig: Configuration (batch_size, state_file, continue_on_error)
-- BatchSyncResult: Result with counts and errors
+Contrib (`from readwise_sdk.contrib import ...`): `HighlightPusher` (`push`, `push_batch`), `DocumentImporter` (`import_document`, `save_url`), `BatchSync` (`sync_highlights`, `sync_books`, `sync_all`).
 
 ## Exceptions
 
-- ReadwiseError: Base exception for all SDK errors
-- AuthenticationError: Invalid API token (HTTP 401)
-- RateLimitError: Rate limit exceeded (HTTP 429), includes retry_after
-- NotFoundError: Resource not found (HTTP 404)
-- ValidationError: Invalid request data (HTTP 400)
-- ServerError: Server error (HTTP 5xx)
+- `ReadwiseError`: base exception for all SDK errors
+- `AuthenticationError`: invalid API token (HTTP 401)
+- `RateLimitError`: rate limit exceeded (HTTP 429), includes `retry_after`
+- `NotFoundError`: resource not found (HTTP 404)
+- `ValidationError`: invalid request data (HTTP 400)
+- `ServerError`: server error (HTTP 5xx)
+
+## CLI
+
+`readwise [--output table|json|jsonl] [--no-color] [--quiet] <group> <command>` with groups `highlights`, `books`, `documents` (alias `reader`), `tags`, `digest`, `sync`, plus `version`.
+
+## MCP Server
+
+Install the `mcp` extra and run `readwise-mcp` (or `python -m readwise_sdk.mcp`). Nine tools: `save_to_reader`, `search_documents`, `get_document`, `update_document`, `delete_document`, `get_highlights`, `export_highlights`, `create_highlight`, `get_books`. Auth via `READWISE_API_KEY` (env var or `~/.env`).
 
 ## Installation
 
 ```bash
-pip install readwise-plus
+pip install readwise-plus          # core
+pip install readwise-plus[cli]     # + CLI
+pip install readwise-plus[mcp]     # + MCP server
 ```
 
 ## Environment Variables
 
-- READWISE_API_KEY: Default API token if not provided to client
+- `READWISE_API_KEY`: default API token if not provided to `Readwise`/`AsyncReadwise`/`ReadwiseClient`
 
 ## Links
 
 - [GitHub Repository](https://github.com/EvanOman/readwise-plus)
+- [MIGRATION.md](https://github.com/EvanOman/readwise-plus/blob/main/MIGRATION.md) — old→new API mapping and deprecation timeline
 - [Readwise API Documentation](https://readwise.io/api_deets)
 - [Reader API Documentation](https://readwise.io/reader_api)

@@ -1,17 +1,17 @@
 # readwise-plus
 
-> Comprehensive Python SDK for Readwise with high-level workflow abstractions. Provides both low-level API access and high-level managers for common operations on highlights, books, and documents.
+> Comprehensive Python SDK for Readwise. Wraps the Readwise API (v2, highlights/books/tags) and the Reader API (v3, documents) in type-safe Pydantic models, behind a concept-oriented facade, a CLI, and an MCP server.
 
 This SDK wraps the Readwise API (v2) and Reader API (v3) in type-safe Pydantic models with automatic pagination, rate limit handling, and error recovery. Built for Python 3.12+ using modern Python patterns.
 
 ## Architecture Overview
 
-The SDK is organized in layers:
+The SDK is organized in layers, dependencies pointing downward only:
 
-1. **Core Layer** (`client.py`, `v2/`, `v3/`): Direct API access with Pydantic models
-2. **Managers Layer** (`managers/`): High-level abstractions for common operations
-3. **Workflows Layer** (`workflows/`): Task-oriented utilities for specific use cases
-4. **Contrib Layer** (`contrib/`): Convenience interfaces for integration patterns
+1. **Transport & resource clients** (`readwise_sdk.transport`, `readwise_sdk.resources.v2`/`.v3`): direct API access — build requests, decode Pydantic models, expose raw pagination. No filtering or formatting.
+2. **Operations layer** (`readwise_sdk.operations`, composed by `ReadwiseService`): the single place that owns search filtering, limits, bulk semantics, digest selection, and sync checkpoints. Returns typed result models. Shared by every adapter below.
+3. **Adapters**: the `Readwise`/`AsyncReadwise` SDK facade (`readwise_sdk.sdk`), the CLI (`readwise_sdk.cli`), and the MCP server (`readwise_sdk.mcp`) each call the operations layer and own only their own protocol concerns (argument parsing, rendering, error envelopes).
+4. **Compatibility layer** (`readwise_sdk.managers`, `.workflows`, `.contrib`, `ReadwiseClient`/`AsyncReadwiseClient`, `.v2`/`.v3`): pre-0.3 classes, now thin wrappers that delegate to the operations layer and translate results back to their original return shapes. Fully supported, not scheduled for removal before `1.0`. See `MIGRATION.md`.
 
 ## Installation
 
@@ -24,32 +24,195 @@ With CLI support:
 pip install readwise-plus[cli]
 ```
 
+As an MCP server:
+```bash
+pip install readwise-plus[mcp]
+```
+
 ## Quick Start
+
+```python
+from readwise_sdk import Readwise
+from readwise_sdk.models import DocumentSearch
+
+with Readwise() as readwise:  # reads READWISE_API_KEY from the environment
+    result = readwise.documents.search(DocumentSearch(query="python", limit=20))
+    for doc in result.items:
+        print(doc.title)
+```
+
+Async:
+
+```python
+from readwise_sdk import AsyncReadwise
+from readwise_sdk.models import DocumentSearch
+
+async with AsyncReadwise() as readwise:
+    result = await readwise.documents.search(DocumentSearch(query="python", limit=20))
+```
+
+The pre-0.3 client keeps working unchanged:
 
 ```python
 from readwise_sdk import ReadwiseClient
 
-# Initialize with API token
-client = ReadwiseClient(api_key="your_token_here")
-
-# Or use READWISE_API_KEY environment variable
-client = ReadwiseClient()
-
-# Validate token
-assert client.validate_token()
-
-# Context manager support
 with ReadwiseClient() as client:
     highlights = list(client.v2.list_highlights())
 ```
 
 ---
 
+## Preferred API: `Readwise` / `AsyncReadwise`
+
+The concept-oriented facade. `AsyncReadwise` uses the operations layer directly; `Readwise` runs the same operations through a dedicated `anyio` blocking portal, so both expose identical methods (the sync ones are plain, non-`await`-prefixed mirrors). Use either as a context manager — it owns and closes the underlying transport (and, for `Readwise`, the portal thread).
+
+```python
+from readwise_sdk import Readwise
+from readwise_sdk.config import DEFAULT_MAX_RETRIES, DEFAULT_RETRY_BACKOFF, DEFAULT_TIMEOUT
+
+readwise = Readwise(
+    api_key="your_token",       # optional if READWISE_API_KEY is set
+    timeout=DEFAULT_TIMEOUT,     # 30.0
+    max_retries=DEFAULT_MAX_RETRIES,   # 3
+    retry_backoff=DEFAULT_RETRY_BACKOFF,  # 0.5
+)
+with readwise:
+    ...
+```
+
+### `.documents` — Reader (v3)
+
+```python
+from readwise_sdk.models import DocumentSearch
+from readwise_sdk.models.reader import DocumentCreate, DocumentUpdate
+from readwise_sdk.v3.models import DocumentLocation
+
+with Readwise() as readwise:
+    result = readwise.documents.search(
+        DocumentSearch(location=DocumentLocation.LATER, query="python", limit=20)
+    )
+    for summary in result.items:  # bounded DocumentSummary projections
+        print(summary.title, summary.url)
+
+    doc = readwise.documents.get(result.items[0].id, with_content=True)
+    created = readwise.documents.save(DocumentCreate(url="https://example.com/article"))
+    readwise.documents.update(created.id, DocumentUpdate(title="New title"))
+    readwise.documents.move(created.id, DocumentLocation.ARCHIVE)
+    readwise.documents.add_tag(created.id, "to-review")
+    readwise.documents.remove_tag(created.id, "to-review")
+
+    inbox = readwise.documents.inbox(limit=20)
+    later = readwise.documents.later(limit=20)
+    archived = readwise.documents.archive(limit=20)
+    stats = readwise.documents.statistics()
+    print(stats.inbox_count, stats.reading_list_count, stats.by_category)
+
+    bulk = readwise.documents.bulk_move([created.id], DocumentLocation.ARCHIVE)
+    print(bulk.succeeded, bulk.failures)
+```
+
+### `.highlights` — Readwise (v2)
+
+```python
+from readwise_sdk.models import HighlightSearch
+from readwise_sdk.models.readwise import HighlightUpdate
+
+with Readwise() as readwise:
+    result = readwise.highlights.search(HighlightSearch(query="python", limit=50))
+    for summary in result.items:  # HighlightSummary
+        print(summary.text)
+
+    highlight = readwise.highlights.get(result.items[0].id)
+    created = readwise.highlights.create_from_fields(
+        text="Important quote", title="Book Title", author="Author Name"
+    )
+    readwise.highlights.update(highlight.id, HighlightUpdate(note="revised"))
+    readwise.highlights.delete(highlight.id)
+
+    recent = readwise.highlights.since(days=7)
+    with_notes = readwise.highlights.with_notes()
+    count = readwise.highlights.count()
+
+    bulk = readwise.highlights.bulk_tag([1, 2, 3], "to-review")
+    export = readwise.highlights.export(limit=20)
+```
+
+### `.books` — Readwise (v2)
+
+```python
+from readwise_sdk.models import BookSearch
+from readwise_sdk.models.readwise import BookCategory
+
+with Readwise() as readwise:
+    result = readwise.books.search(BookSearch(category=BookCategory.BOOKS, query="python"))
+    book_id = result.items[0].id
+
+    with_highlights = readwise.books.with_highlights(book_id)
+    print(with_highlights.book.title, len(with_highlights.highlights))
+
+    recent = readwise.books.recent(days=30, limit=10)
+    stats = readwise.books.statistics()
+    print(stats.total_books, stats.total_highlights)
+```
+
+### `.tags`
+
+```python
+from readwise_sdk.operations import TagPattern
+
+with Readwise() as readwise:
+    report = readwise.tags.get_tag_report()
+    print(report.total_tags, report.total_usages, report.duplicate_candidates)
+
+    patterns = [TagPattern(r"\bpython\b", "python", case_sensitive=False)]
+    tagged = readwise.tags.auto_tag_highlights(patterns, dry_run=True)  # dict[int, list[str]]
+
+    readwise.tags.rename_tag("old-name", "new-name", dry_run=True)
+    readwise.tags.merge_tags(["tag-a", "tag-b"], "merged-tag", dry_run=True)
+    readwise.tags.delete_tag("stale-tag", dry_run=True)
+```
+
+### `.digests`
+
+```python
+with Readwise() as readwise:
+    daily = readwise.digests.daily()
+    weekly = readwise.digests.weekly(group_by_book=False)
+    book_digest = readwise.digests.book(book_id=123)
+    custom = readwise.digests.custom(group_by_date=True)
+```
+
+Digest data (`DigestData`) is presentation-agnostic; render it with `readwise_sdk.presenters.render_digest(data, DigestFormat.MARKDOWN)` (formats: `MARKDOWN`, `JSON`, `CSV`, `TEXT`).
+
+### `.sync`
+
+```python
+with Readwise() as readwise:
+    result = readwise.sync.full()               # SyncResult
+    result = readwise.sync.incremental()
+    result = readwise.sync.poll_once()
+    outcome = readwise.sync.batch_highlights(on_item=lambda h: print(h.text))
+    checkpoint = readwise.sync.status()          # SyncCheckpoint
+    readwise.sync.reset()
+```
+
+### `.raw` — low-level escape hatch
+
+```python
+with Readwise() as readwise:
+    readwise.raw.v2   # ReadwiseV2Client — same object as ReadwiseClient(...).v2
+    readwise.raw.v3   # ReadwiseV3Client — same object as ReadwiseClient(...).v3
+```
+
+---
+
+## Compatibility API (`ReadwiseClient` / `AsyncReadwiseClient`)
+
+Unchanged since before `0.3`. All classes and methods below still work — see `MIGRATION.md` for the mapping onto the preferred facade above and the deprecation timeline.
+
 ## Core Client
 
 ### ReadwiseClient
-
-The main entry point for all SDK operations.
 
 ```python
 from readwise_sdk import ReadwiseClient
@@ -60,16 +223,11 @@ client = ReadwiseClient(
     max_retries=3,         # Number of retries on failure
 )
 
-# Access V2 API (Readwise)
-client.v2  # Returns V2Client
+client.v2  # Returns ReadwiseV2Client
+client.v3  # Returns ReadwiseV3Client
 
-# Access V3 API (Reader)
-client.v3  # Returns V3Client
-
-# Validate token
 is_valid = client.validate_token()  # Returns bool
 
-# Context manager
 with client:
     # client is automatically closed on exit
     pass
@@ -203,11 +361,11 @@ book = client.v2.get_book(book_id=123)
 
 # Tag operations
 tags = client.v2.list_highlight_tags(highlight_id=123)
-client.v2.create_highlight_tag(highlight_id=123, tag_name="important")
+client.v2.create_highlight_tag(highlight_id=123, name="important")
 client.v2.delete_highlight_tag(highlight_id=123, tag_id=456)
 
 tags = client.v2.list_book_tags(book_id=123)
-client.v2.create_book_tag(book_id=123, tag_name="favorites")
+client.v2.create_book_tag(book_id=123, name="favorites")
 
 # Export highlights (includes full book data)
 for export_book in client.v2.export_highlights(
@@ -331,7 +489,7 @@ client.v3.move_to_inbox(document_id="uuid")   # Back to inbox
 
 # Tag operations
 tags = list(client.v3.list_tags())
-client.v3.tag_document(document_id="uuid", tag="important")
+client.v3.tag_document(document_id="uuid", tags=["important"])
 
 # Convenience methods
 inbox = list(client.v3.get_inbox())
@@ -359,8 +517,8 @@ all_highlights = manager.get_all_highlights()
 # Get highlights for a specific book
 book_highlights = manager.get_highlights_by_book(book_id=123)
 
-# Get recent highlights
-recent = manager.get_recent_highlights(days=7)
+# Get highlights from the last N days (or hours, or since a datetime)
+recent = manager.get_highlights_since(days=7)
 
 # Get highlights with notes
 with_notes = manager.get_highlights_with_notes()
@@ -371,16 +529,15 @@ results = manager.search_highlights("machine learning")
 # Bulk tag operation
 manager.bulk_tag(
     highlight_ids=[1, 2, 3],
-    tag_name="to-review",
+    tag="to-review",
 )
 
-# Create new highlight
+# Create new highlight (returns the new highlight ID)
 highlight_id = manager.create_highlight(
     text="Important quote",
     title="Book Title",
     author="Author",
     note="My thoughts",
-    category=BookCategory.BOOKS,
 )
 
 # Get total count
@@ -393,6 +550,7 @@ High-level book operations.
 
 ```python
 from readwise_sdk import ReadwiseClient, BookManager
+from readwise_sdk.managers.books import BookCategory
 
 client = ReadwiseClient()
 manager = BookManager(client)
@@ -404,7 +562,8 @@ all_books = manager.get_all_books()
 articles = manager.get_books_by_category(BookCategory.ARTICLES)
 
 # Get book with all highlights
-book, highlights = manager.get_book_with_highlights(book_id=123)
+result = manager.get_book_with_highlights(book_id=123)
+print(result.book.title, len(result.highlights))
 
 # Get recently updated books
 recent = manager.get_recent_books(days=30, limit=10)
@@ -417,7 +576,7 @@ stats = manager.get_reading_stats()
 print(f"Total books: {stats.total_books}")
 print(f"Total highlights: {stats.total_highlights}")
 print(f"By category: {stats.books_by_category}")
-print(f"Top book: {stats.top_book_by_highlights}")
+print(f"Most highlighted: {stats.most_highlighted_books}")  # list[(title, count)]
 ```
 
 ### DocumentManager
@@ -426,6 +585,7 @@ High-level Reader document operations.
 
 ```python
 from readwise_sdk import ReadwiseClient, DocumentManager
+from readwise_sdk.managers.documents import DocumentCategory
 
 client = ReadwiseClient()
 manager = DocumentManager(client)
@@ -439,7 +599,7 @@ archive = manager.get_archive()
 articles = manager.get_documents_by_category(DocumentCategory.ARTICLE)
 
 # Move operations
-manager.move_to_reading_list(document_id="uuid")
+manager.move_to_later(document_id="uuid")
 manager.bulk_archive(document_ids=["uuid1", "uuid2", "uuid3"])
 
 # Search documents
@@ -484,9 +644,9 @@ result = manager.incremental_sync(
 )
 
 # Check sync state
-print(f"Last sync: {manager.state.last_sync}")
+print(f"Last sync: {manager.state.last_sync_time}")
 print(f"Total syncs: {manager.state.total_syncs}")
-print(f"Total highlights synced: {manager.state.total_highlights}")
+print(f"Last highlight sync: {manager.state.last_highlight_sync}")
 
 # Reset state (next sync will be full)
 manager.reset_state()
@@ -527,7 +687,7 @@ Inbox management and smart archiving.
 
 ```python
 from readwise_sdk import ReadwiseClient
-from readwise_sdk.workflows.inbox import ReadingInbox, ArchiveRules
+from readwise_sdk.workflows.inbox import ArchiveRule, ReadingInbox
 
 client = ReadwiseClient()
 inbox = ReadingInbox(client)
@@ -547,20 +707,13 @@ prioritized = inbox.get_inbox_by_priority()
 # Search inbox
 results = inbox.search_inbox("machine learning")
 
-# Smart archive with rules
-rules = [
-    ArchiveRules.create_old_item_rule(days=90),
-    ArchiveRules.create_category_rule(DocumentCategory.TWEET),
-    ArchiveRules.create_domain_rule("twitter.com"),
-    ArchiveRules.create_title_pattern_rule(r"^Weekly\s"),
-]
-
-# Dry run first
-dry_run_result = inbox.smart_archive(rules, dry_run=True)
-print(f"Would archive: {len(dry_run_result.archived_ids)} items")
-
-# Execute
-result = inbox.smart_archive(rules, dry_run=False)
+# Register an archive rule, then run it (dry run first)
+inbox.add_archive_rule(
+    ArchiveRule(name="old-items", condition=lambda doc: doc.word_count is not None and doc.word_count < 200)
+)
+dry_run_actions = inbox.smart_archive(dry_run=True)   # list[TriageAction]
+print(f"Would archive: {len(dry_run_actions)} items")
+actions = inbox.smart_archive(dry_run=False)
 
 # Move to reading list
 inbox.move_to_reading_list(document_ids=["uuid1", "uuid2"])
@@ -568,45 +721,34 @@ inbox.move_to_reading_list(document_ids=["uuid1", "uuid2"])
 
 ### BackgroundPoller
 
-Background polling for new content.
+Background polling for new content, with error backoff.
 
 ```python
 from readwise_sdk import ReadwiseClient
-from readwise_sdk.workflows.poller import BackgroundPoller
+from readwise_sdk.workflows.poller import BackgroundPoller, PollerConfig
 
 client = ReadwiseClient()
 poller = BackgroundPoller(
     client,
-    state_file="poller_state.json",
-    poll_highlights=True,
-    poll_books=True,
-    poll_documents=True,
+    config=PollerConfig(
+        state_file="poller_state.json",
+        poll_interval=300,  # seconds
+        include_highlights=True,
+        include_documents=True,
+    ),
 )
 
-# Register callbacks
-@poller.on_new_highlight
-def handle_highlight(highlight):
-    print(f"New highlight: {highlight.text[:50]}")
-
-@poller.on_new_book
-def handle_book(book):
-    print(f"New book: {book.title}")
-
-@poller.on_new_document
-def handle_document(doc):
-    print(f"New document: {doc.title}")
-
-@poller.on_error
-def handle_error(error):
-    print(f"Error: {error}")
+# Register callbacks — receive the full SyncResult / the raised exception
+poller.on_sync(lambda result: print(f"Synced {len(result.highlights)} highlights"))
+poller.on_error(lambda error: print(f"Error: {error}"))
 
 # Poll once manually
 poller.poll_once()
 
-# Start background polling (runs in separate thread)
-poller.start(interval_seconds=300)  # Every 5 minutes
+# Start background polling (runs in a separate thread; poll_interval from config)
+poller.start()
 
-# Check if running
+# Check if running (property, not a method call)
 print(f"Is running: {poller.is_running}")
 
 # Stop polling
@@ -619,21 +761,21 @@ Tag management and auto-tagging.
 
 ```python
 from readwise_sdk import ReadwiseClient
-from readwise_sdk.workflows.tags import TagWorkflow, TagPattern
+from readwise_sdk.workflows.tags import TagPattern, TagWorkflow
 
 client = ReadwiseClient()
 workflow = TagWorkflow(client)
 
-# Auto-tag based on patterns
+# Auto-tag based on patterns: TagPattern(pattern, tag, case_sensitive=, match_in_notes=, match_in_text=)
 patterns = [
-    TagPattern(pattern=r"\bmachine learning\b", tag_name="ml"),
-    TagPattern(pattern=r"\bpython\b", tag_name="python", case_sensitive=False),
-    TagPattern(pattern=r"TODO:", tag_name="actionable", search_in_notes=True),
+    TagPattern(r"\bmachine learning\b", "ml"),
+    TagPattern(r"\bpython\b", "python", case_sensitive=False),
+    TagPattern(r"TODO:", "actionable", match_in_notes=True),
 ]
 
-# Dry run
+# Dry run — returns dict[highlight_id, list[tags_that_would_be_applied]]
 result = workflow.auto_tag_highlights(patterns, dry_run=True)
-print(f"Would tag {len(result.tagged_highlights)} highlights")
+print(f"Would tag {len(result)} highlights")
 
 # Execute
 result = workflow.auto_tag_highlights(patterns, dry_run=False)
@@ -762,7 +904,7 @@ archive = importer.list_archive(limit=10)
 since = datetime.now() - timedelta(days=7)
 updated = importer.list_updated_since(since, limit=50)
 
-# Save URL to Reader
+# Save URL to Reader (returns the new document ID)
 doc_id = importer.save_url("https://example.com/article")
 ```
 
@@ -804,8 +946,8 @@ print(f"Failed: {result.failed_items}")
 # Sync books
 result = sync.sync_books(full_sync=False)
 
-# Sync both
-highlight_result, book_result = sync.sync_all(
+# Sync all three (returns a 3-tuple)
+highlight_result, book_result, document_result = sync.sync_all(
     on_highlight=on_highlight,
     full_sync=False,
 )
@@ -854,12 +996,31 @@ except ReadwiseError as e:
 
 ---
 
+## CLI
+
+```bash
+readwise [--output table|json|jsonl] [--no-color] [--quiet] <group> <command>
+```
+
+Groups: `highlights` (list/show/create/update/delete/tag/untag/export), `books` (list/show), `documents` (inbox/save/archive/stats/get/update/delete/move/tag — alias `reader`), `tags` (list/search/untagged/auto-tag/rename/merge/delete/report), `digest` (daily/weekly/book/custom), `sync` (full/incremental/status/reset), `version`. `--output` is a root option and must precede the group, e.g. `readwise --output json sync full`.
+
+## MCP Server
+
+Install the `mcp` extra and run `readwise-mcp` (console script) or `python -m readwise_sdk.mcp`. Nine tools, all backed by the same operations layer as the SDK facade and CLI:
+
+- Documents (Reader v3): `save_to_reader`, `search_documents`, `get_document`, `update_document`, `delete_document`
+- Highlights (Readwise v2): `get_highlights`, `export_highlights`, `create_highlight`
+- Books (Readwise v2): `get_books`
+
+Auth via `READWISE_API_KEY` (environment variable, or a `READWISE_API_KEY=` line in `~/.env`).
+
 ## Environment Variables
 
-- `READWISE_API_KEY`: Default API token (used if not provided to client)
+- `READWISE_API_KEY`: Default API token (used if not provided to `Readwise`/`AsyncReadwise`/`ReadwiseClient`)
 
 ## Links
 
 - GitHub: https://github.com/EvanOman/readwise-plus
+- Migration guide (old → new API, deprecation timeline): https://github.com/EvanOman/readwise-plus/blob/main/MIGRATION.md
 - Readwise API: https://readwise.io/api_deets
 - Reader API: https://readwise.io/reader_api

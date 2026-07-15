@@ -2,14 +2,34 @@
 
 from __future__ import annotations
 
-import os
-from importlib.metadata import version
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from readwise_sdk._utils import handle_response, parse_pagination_cursor
-from readwise_sdk.exceptions import AuthenticationError, RateLimitError, ReadwiseError
+from readwise_sdk.config import (
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_RETRY_BACKOFF,
+    DEFAULT_TIMEOUT,
+    DEFAULT_USER_AGENT,
+    ClientConfig,
+    resolve_api_key,
+)
+from readwise_sdk.config import (
+    READWISE_API_V2_BASE as CONFIG_READWISE_API_V2_BASE,
+)
+from readwise_sdk.config import (
+    READWISE_API_V3_BASE as CONFIG_READWISE_API_V3_BASE,
+)
+from readwise_sdk.errors import AuthenticationError, RateLimitError, ReadwiseError
+from readwise_sdk.transport.async_ import AsyncTransport
+from readwise_sdk.transport.errors import handle_response
+from readwise_sdk.transport.pagination import KeyedPage, paginate, paginate_async
+from readwise_sdk.transport.retry import (
+    RETRYABLE_NETWORK_EXCEPTIONS,
+    calculate_retry_delay,
+    is_retryable_exception,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -19,17 +39,10 @@ if TYPE_CHECKING:
     from readwise_sdk.v3.async_client import AsyncReadwiseV3Client
     from readwise_sdk.v3.client import ReadwiseV3Client
 
-# API base URLs
-READWISE_API_V2_BASE = "https://readwise.io/api/v2"
-READWISE_API_V3_BASE = "https://readwise.io/api/v3"
-
-# Default configuration
-DEFAULT_TIMEOUT = 30.0
-DEFAULT_MAX_RETRIES = 3
-DEFAULT_RETRY_BACKOFF = 0.5
-
-# User agent string with dynamic version
-_USER_AGENT = f"readwise-plus/{version('readwise-plus')}"
+# Compatibility alias for the previous module-level user agent.
+_USER_AGENT = DEFAULT_USER_AGENT
+READWISE_API_V2_BASE = CONFIG_READWISE_API_V2_BASE
+READWISE_API_V3_BASE = CONFIG_READWISE_API_V3_BASE
 
 
 class BaseClient:
@@ -53,17 +66,61 @@ class BaseClient:
             retry_backoff: Base backoff time between retries (exponential).
             _defer_validation: Internal flag used by create_optional(). Do not use directly.
         """
-        self.api_key = api_key or os.environ.get("READWISE_API_KEY")
-        if not self.api_key and not _defer_validation:
+        resolved_api_key = resolve_api_key(api_key)
+        if not resolved_api_key and not _defer_validation:
             raise AuthenticationError(
                 "API key is required. Set READWISE_API_KEY or pass api_key parameter."
             )
 
-        self.timeout = timeout
-        self.max_retries = max_retries
-        self.retry_backoff = retry_backoff
+        self._config = ClientConfig(
+            api_key=resolved_api_key,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+        )
 
         self._client: httpx.Client | None = None
+
+    @property
+    def config(self) -> ClientConfig:
+        """Return the immutable canonical client configuration."""
+        return self._config
+
+    @property
+    def api_key(self) -> str | None:
+        """Return the configured API key."""
+        return self._config.api_key
+
+    @api_key.setter
+    def api_key(self, value: str | None) -> None:
+        self._config = replace(self._config, api_key=value)
+
+    @property
+    def timeout(self) -> float:
+        """Return the request timeout in seconds."""
+        return self._config.timeout
+
+    @timeout.setter
+    def timeout(self, value: float) -> None:
+        self._config = replace(self._config, timeout=value)
+
+    @property
+    def max_retries(self) -> int:
+        """Return the maximum number of request retries."""
+        return self._config.max_retries
+
+    @max_retries.setter
+    def max_retries(self, value: int) -> None:
+        self._config = replace(self._config, max_retries=value)
+
+    @property
+    def retry_backoff(self) -> float:
+        """Return the base exponential retry backoff in seconds."""
+        return self._config.retry_backoff
+
+    @retry_backoff.setter
+    def retry_backoff(self, value: float) -> None:
+        self._config = replace(self._config, retry_backoff=value)
 
     @property
     def is_configured(self) -> bool:
@@ -83,7 +140,7 @@ class BaseClient:
                 headers={
                     "Authorization": f"Token {self.api_key}",
                     "Content-Type": "application/json",
-                    "User-Agent": _USER_AGENT,
+                    "User-Agent": self.config.user_agent,
                 },
             )
         return self._client
@@ -121,15 +178,18 @@ class BaseClient:
             try:
                 response = self.client.request(method, url, params=params, json=json)
                 return handle_response(response)
-            except (httpx.ConnectError, httpx.TimeoutException) as e:
+            except RETRYABLE_NETWORK_EXCEPTIONS as e:
                 last_error = e
-                if attempt < self.max_retries:
-                    wait_time = self.retry_backoff * (2**attempt)
-                    time.sleep(wait_time)
+                if attempt < self.max_retries and is_retryable_exception(e):
+                    wait_time = calculate_retry_delay(e, self.retry_backoff, attempt)
+                    if wait_time is not None:
+                        time.sleep(wait_time)
             except RateLimitError as e:
                 last_error = e
-                if attempt < self.max_retries and e.retry_after:
-                    time.sleep(e.retry_after)
+                if attempt < self.max_retries and is_retryable_exception(e):
+                    wait_time = calculate_retry_delay(e, self.retry_backoff, attempt)
+                    if wait_time is not None:
+                        time.sleep(wait_time)
                 else:
                     raise
 
@@ -237,7 +297,7 @@ class ReadwiseClient(BaseClient):
             True if the token is valid, False otherwise.
         """
         try:
-            response = self.get(f"{READWISE_API_V2_BASE}/auth/")
+            response = self.get(f"{self.config.v2_base_url}/auth/")
             return response.status_code == 204
         except AuthenticationError:
             return False
@@ -260,20 +320,12 @@ class ReadwiseClient(BaseClient):
         Yields:
             Individual result items from each page.
         """
-        params = params.copy() if params else {}
-
-        while True:
-            response = self.get(url, params=params)
-            data = response.json()
-
-            results = data.get(results_key, [])
-            yield from results
-
-            next_cursor = data.get(cursor_key)
-            if not next_cursor:
-                break
-
-            url, params = parse_pagination_cursor(next_cursor, url, params)
+        yield from paginate(
+            self.get,
+            url,
+            params,
+            decoder=KeyedPage(results_key=results_key, cursor_key=cursor_key),
+        )
 
 
 class AsyncReadwiseClient:
@@ -312,19 +364,72 @@ class AsyncReadwiseClient:
             retry_backoff: Base backoff time between retries (exponential).
             _defer_validation: Internal flag used by create_optional(). Do not use directly.
         """
-        self.api_key = api_key or os.environ.get("READWISE_API_KEY")
-        if not self.api_key and not _defer_validation:
+        resolved_api_key = resolve_api_key(api_key)
+        if not resolved_api_key and not _defer_validation:
             raise AuthenticationError(
                 "API key is required. Set READWISE_API_KEY or pass api_key parameter."
             )
 
-        self.timeout = timeout
-        self.max_retries = max_retries
-        self.retry_backoff = retry_backoff
+        self._config = ClientConfig(
+            api_key=resolved_api_key,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+        )
 
-        self._client: httpx.AsyncClient | None = None
+        self._transport = AsyncTransport(self._config)
         self._v2: AsyncReadwiseV2Client | None = None
         self._v3: AsyncReadwiseV3Client | None = None
+
+    @property
+    def _client(self) -> httpx.AsyncClient | None:
+        """Retain the legacy observable reference to the raw HTTP client."""
+        return self._transport.raw_client
+
+    @property
+    def config(self) -> ClientConfig:
+        """Return the immutable canonical client configuration."""
+        return self._config
+
+    @property
+    def api_key(self) -> str | None:
+        """Return the configured API key."""
+        return self._config.api_key
+
+    @api_key.setter
+    def api_key(self, value: str | None) -> None:
+        self._config = replace(self._config, api_key=value)
+        self._transport.config = self._config
+
+    @property
+    def timeout(self) -> float:
+        """Return the request timeout in seconds."""
+        return self._config.timeout
+
+    @timeout.setter
+    def timeout(self, value: float) -> None:
+        self._config = replace(self._config, timeout=value)
+        self._transport.config = self._config
+
+    @property
+    def max_retries(self) -> int:
+        """Return the maximum number of request retries."""
+        return self._config.max_retries
+
+    @max_retries.setter
+    def max_retries(self, value: int) -> None:
+        self._config = replace(self._config, max_retries=value)
+        self._transport.config = self._config
+
+    @property
+    def retry_backoff(self) -> float:
+        """Return the base exponential retry backoff in seconds."""
+        return self._config.retry_backoff
+
+    @retry_backoff.setter
+    def retry_backoff(self, value: float) -> None:
+        self._config = replace(self._config, retry_backoff=value)
+        self._transport.config = self._config
 
     @property
     def is_configured(self) -> bool:
@@ -380,16 +485,7 @@ class AsyncReadwiseClient:
     @property
     def client(self) -> httpx.AsyncClient:
         """Lazily initialize and return the async HTTP client."""
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                timeout=self.timeout,
-                headers={
-                    "Authorization": f"Token {self.api_key}",
-                    "Content-Type": "application/json",
-                    "User-Agent": _USER_AGENT,
-                },
-            )
-        return self._client
+        return self._transport.client
 
     @property
     def v2(self) -> AsyncReadwiseV2Client:
@@ -411,9 +507,7 @@ class AsyncReadwiseClient:
 
     async def close(self) -> None:
         """Close the HTTP client."""
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        await self._transport.close()
 
     async def __aenter__(self) -> AsyncReadwiseClient:
         return self
@@ -429,32 +523,7 @@ class AsyncReadwiseClient:
         json: dict[str, Any] | None = None,
     ) -> httpx.Response:
         """Make an async HTTP request with retry logic."""
-        if not self.api_key:
-            raise AuthenticationError(
-                "API key is required. Set READWISE_API_KEY or pass api_key parameter."
-            )
-
-        import asyncio
-
-        last_error: Exception | None = None
-
-        for attempt in range(self.max_retries + 1):
-            try:
-                response = await self.client.request(method, url, params=params, json=json)
-                return handle_response(response)
-            except (httpx.ConnectError, httpx.TimeoutException) as e:
-                last_error = e
-                if attempt < self.max_retries:
-                    wait_time = self.retry_backoff * (2**attempt)
-                    await asyncio.sleep(wait_time)
-            except RateLimitError as e:
-                last_error = e
-                if attempt < self.max_retries and e.retry_after:
-                    await asyncio.sleep(e.retry_after)
-                else:
-                    raise
-
-        raise ReadwiseError(f"Request failed after {self.max_retries + 1} attempts: {last_error}")
+        return await self._transport.request(method, url, params=params, json=json)
 
     async def get(self, url: str, params: dict[str, Any] | None = None) -> httpx.Response:
         """Make an async GET request."""
@@ -479,7 +548,7 @@ class AsyncReadwiseClient:
             True if the token is valid, False otherwise.
         """
         try:
-            response = await self.get(f"{READWISE_API_V2_BASE}/auth/")
+            response = await self.get(f"{self.config.v2_base_url}/auth/")
             return response.status_code == 204
         except AuthenticationError:
             return False
@@ -502,18 +571,10 @@ class AsyncReadwiseClient:
         Yields:
             Individual result items from each page.
         """
-        params = params.copy() if params else {}
-
-        while True:
-            response = await self.get(url, params=params)
-            data = response.json()
-
-            results = data.get(results_key, [])
-            for item in results:
-                yield item
-
-            next_cursor = data.get(cursor_key)
-            if not next_cursor:
-                break
-
-            url, params = parse_pagination_cursor(next_cursor, url, params)
+        async for item in paginate_async(
+            self.get,
+            url,
+            params,
+            decoder=KeyedPage(results_key=results_key, cursor_key=cursor_key),
+        ):
+            yield item

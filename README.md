@@ -6,7 +6,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/readwise-plus)](https://pypi.org/project/readwise-plus/)
 [![License](https://img.shields.io/github/license/EvanOman/readwise-plus)](https://github.com/EvanOman/readwise-plus/blob/main/LICENSE)
 
-Comprehensive Python SDK for [Readwise](https://readwise.io) with high-level workflow abstractions. Supports both the Readwise API (v2) for highlights/books and the Reader API (v3) for documents.
+Comprehensive Python SDK for [Readwise](https://readwise.io), covering both the Readwise API (v2) for highlights/books and the Reader API (v3) for documents behind one concept-oriented interface.
 
 ## Table of Contents
 
@@ -14,23 +14,21 @@ Comprehensive Python SDK for [Readwise](https://readwise.io) with high-level wor
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
-- [Core API Usage](#core-api-usage)
-- [Managers](#managers)
-- [Workflows](#workflows)
-- [Contrib Interfaces](#contrib-interfaces)
+- [Concept Operations](#concept-operations)
+- [Compatibility APIs](#compatibility-apis)
 - [CLI](#cli)
+- [MCP Server](#mcp-server)
 - [Development](#development)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Features
 
-- **V2 API (Readwise)**: Full support for highlights, books, tags, and daily review
-- **V3 API (Reader)**: Full support for documents, inbox, reading list, and archive
-- **Managers**: High-level abstractions for common operations
-- **Workflows**: Pre-built workflows for digests, tagging, and syncing
-- **Contrib**: Convenience interfaces for common integration patterns
-- **CLI**: Command-line interface for quick operations
+- **Concept-oriented facade**: `Readwise` / `AsyncReadwise` expose `.documents`, `.highlights`, `.books`, `.tags`, `.digests`, and `.sync` — one place to call each operation, shared by the SDK, CLI, and MCP server
+- **Raw escape hatch**: `.raw.v2` / `.raw.v3` for direct, low-level Readwise/Reader API access when you need it
+- **CLI**: full command tree (`documents`, `highlights`, `books`, `tags`, `digest`, `sync`) with `--output table|json|jsonl`
+- **MCP server**: nine tools for AI agents (Claude Code, Claude Desktop, or any MCP client)
+- **Compatibility APIs**: the pre-0.3 `ReadwiseClient`, managers, workflows, and contrib helpers keep working unchanged — see [Compatibility APIs](#compatibility-apis) and [MIGRATION.md](MIGRATION.md)
 
 ## Installation
 
@@ -44,369 +42,281 @@ With CLI support:
 pip install readwise-plus[cli]
 ```
 
+As an MCP server for AI agents:
+
+```bash
+pip install readwise-plus[mcp]
+```
+
 ## Quick Start
 
 ```python
-from readwise_sdk import ReadwiseClient
+from readwise_sdk import Readwise
+from readwise_sdk.models import DocumentSearch
 
-# Initialize with your API token
-client = ReadwiseClient(api_key="your_token_here")
-
-# Or use environment variable READWISE_API_KEY
-client = ReadwiseClient()
-
-# Validate your token
-client.validate_token()
-
-# Get all highlights
-for highlight in client.v2.highlights.list():
-    print(highlight.text)
-
-# Get Reader inbox
-for doc in client.v3.documents.list(location="new"):
-    print(doc.title)
+with Readwise() as readwise:  # reads READWISE_API_KEY from the environment
+    result = readwise.documents.search(DocumentSearch(query="python", limit=20))
+    for doc in result.items:
+        print(doc.title)
 ```
+
+Async, for agent runtimes and async apps:
+
+```python
+from readwise_sdk import AsyncReadwise
+from readwise_sdk.models import DocumentSearch
+
+async with AsyncReadwise() as readwise:
+    result = await readwise.documents.search(DocumentSearch(query="python", limit=20))
+    for doc in result.items:
+        print(doc.title)
+```
+
+`Readwise` and `AsyncReadwise` are the preferred entry points as of `0.3`. New code should start here — see [Concept Operations](#concept-operations) below. Everything under [Compatibility APIs](#compatibility-apis) (`ReadwiseClient`, `.v2`/`.v3`, managers, workflows, contrib) still works and is not scheduled for removal before `1.0`; if you have existing code using it, there is no need to migrate immediately.
 
 ## Architecture
 
-The SDK is organized into layers of increasing abstraction:
-
 ```
 readwise-plus/
-├── Core Layer
-│   ├── V2 Client      → client.v2.*     (Readwise API)
-│   └── V3 Client      → client.v3.*     (Reader API)
-├── Manager Layer
-│   ├── HighlightManager   → Highlight operations
-│   ├── BookManager        → Book operations
-│   ├── DocumentManager    → Document operations
-│   └── SyncManager        → Sync state tracking
-├── Workflow Layer
-│   ├── DigestBuilder      → Create highlight digests
-│   ├── ReadingInbox       → Inbox management
-│   ├── TagWorkflow        → Auto-tagging
-│   └── BackgroundPoller   → Background sync
-└── Contrib Layer
-    ├── HighlightPusher    → Push highlights to Readwise
-    ├── DocumentImporter   → Import documents to Reader
-    └── BatchSync          → Batch synchronization
+├── Concept facade      → Readwise | AsyncReadwise
+│   ├── .documents           Reader documents (v3)
+│   ├── .highlights          Readwise highlights (v2)
+│   ├── .books               Readwise books/sources (v2)
+│   ├── .tags                Tag reports, auto-tag, merge/rename/delete
+│   ├── .digests             Daily/weekly/book/custom digest data
+│   ├── .sync                Full/incremental sync, checkpoints
+│   └── .raw.v2 / .raw.v3    Low-level escape hatch (same clients as below)
+├── Operations layer    → async-first; shared by the facade, CLI, and MCP server
+├── Resource clients    → readwise_sdk.resources.v2 / .v3 (endpoint-only)
+└── Compatibility layer → ReadwiseClient/.v2/.v3, managers, workflows, contrib
 ```
 
-## Core API Usage
+The CLI and MCP server call the same operations layer as the `Readwise`/`AsyncReadwise` facade, so behavior (limits, filtering, error handling) is consistent across all three surfaces. See [docs/architecture.md](docs/architecture.md) for a short contributor-facing note on the layering, and [MIGRATION.md](MIGRATION.md) for the old→new API mapping and deprecation timeline.
 
-### V2 API (Readwise Highlights)
+## Concept Operations
+
+Each concept attribute exposes the same methods on both `Readwise` (sync) and `AsyncReadwise` (`await`-prefixed):
+
+```python
+from readwise_sdk import Readwise
+from readwise_sdk.models import BookSearch, DocumentSearch, HighlightSearch
+
+with Readwise() as readwise:
+    # Documents (Reader v3)
+    docs = readwise.documents.search(DocumentSearch(location="later", query="python"))
+    doc = readwise.documents.get(docs.items[0].id, with_content=True)
+    readwise.documents.add_tag(doc.id, "to-review")
+
+    # Highlights (Readwise v2)
+    highlights = readwise.highlights.search(HighlightSearch(query="python"))
+    created = readwise.highlights.create_from_fields(
+        text="Important quote", title="Book Title", author="Author Name"
+    )
+
+    # Books (Readwise v2)
+    books = readwise.books.search(BookSearch(query="python"))
+    with_highlights = readwise.books.with_highlights(books.items[0].id)
+
+    # Tags
+    report = readwise.tags.get_tag_report()
+
+    # Digests
+    daily = readwise.digests.daily()
+
+    # Sync
+    checkpoint = readwise.sync.status()
+```
+
+For advanced or low-level use, `readwise.raw.v2` and `readwise.raw.v3` return the same client objects documented under [Compatibility APIs](#compatibility-apis).
+
+## Compatibility APIs
+
+Everything below predates the `0.3` concept facade. It is unchanged and fully supported — these are not "legacy" in the sense of being broken or scheduled for imminent removal, just no longer the recommended starting point for new code. See [MIGRATION.md](MIGRATION.md) for the full old→new mapping and the deprecation timeline through `1.0`.
+
+### `ReadwiseClient` / `AsyncReadwiseClient`
 
 ```python
 from readwise_sdk import ReadwiseClient
-from datetime import datetime
+from readwise_sdk.v3.models import DocumentLocation
 
-client = ReadwiseClient()
+client = ReadwiseClient(api_key="your_token_here")  # or READWISE_API_KEY env var
+client.validate_token()
 
-# List highlights with filtering
-highlights = client.v2.highlights.list(
-    book_id=123,
-    updated_after=datetime(2024, 1, 1),
-)
-
-# Get a specific highlight
-highlight = client.v2.highlights.get(highlight_id=456)
-
-# Create a highlight
-new_highlight = client.v2.highlights.create(
-    text="Important quote from the book",
-    title="Book Title",
-    author="Author Name",
-    source_type="book",
-)
-
-# Export all highlights with full book metadata
-for book in client.v2.export_highlights():
-    print(f"{book.title}: {len(book.highlights)} highlights")
-    for h in book.highlights:
-        print(f"  - {h.text[:50]}...")
-
-# Get daily review highlights
-review = client.v2.get_daily_review()
-for highlight in review.highlights:
+# V2 API (Readwise) — highlights and books
+for highlight in client.v2.list_highlights():
     print(highlight.text)
-```
 
-### V3 API (Reader Documents)
+review = client.v2.get_daily_review()
 
-```python
-# List inbox documents
-for doc in client.v3.documents.list(location="new"):
-    print(f"{doc.title} ({doc.category})")
+# V3 API (Reader) — documents
+for doc in client.v3.list_documents(location=DocumentLocation.LATER):
+    print(doc.title)
 
-# Save a URL to Reader
 result = client.v3.save_url("https://example.com/article")
-print(f"Saved: {result.id}")
-
-# Get document with full content
-doc = client.v3.documents.get(doc_id, with_html=True)
-print(doc.html)
-
-# Move document to archive
-client.v3.documents.update(doc_id, location="archive")
-
-# Filter by category
-articles = client.v3.documents.list(category="article")
-pdfs = client.v3.documents.list(category="pdf")
+client.close()
 ```
 
-## Managers
-
-Managers provide higher-level operations with better ergonomics.
-
-### HighlightManager
+### Managers
 
 ```python
-from readwise_sdk.managers import HighlightManager
+from readwise_sdk.managers import BookManager, DocumentManager, HighlightManager
+from readwise_sdk import BookCategory
 
 highlights = HighlightManager(client)
-
-# Get recent highlights
 recent = highlights.get_highlights_since(days=7)
-
-# Search highlights
-results = highlights.search("python programming")
-
-# Bulk operations
-highlights.bulk_tag(highlight_ids, "to-review")
-highlights.bulk_delete(highlight_ids)
-
-# Get highlights by book
-book_highlights = highlights.get_by_book(book_id=123)
-```
-
-### BookManager
-
-```python
-from readwise_sdk.managers import BookManager
+matches = highlights.search_highlights("python programming")
 
 books = BookManager(client)
-
-# List all books
-all_books = books.list()
-
-# Get books by category
-articles = books.get_by_category("articles")
-
-# Get book with highlights
-book = books.get_with_highlights(book_id=123)
-```
-
-### DocumentManager
-
-```python
-from readwise_sdk.managers import DocumentManager
+python_books = books.get_books_by_category(BookCategory.BOOKS)
+book_with_highlights = books.get_book_with_highlights(book_id=123)
 
 docs = DocumentManager(client)
-
-# Get inbox
 inbox = docs.get_inbox()
-
-# Archive a document
-docs.archive(doc_id)
-
-# Get reading stats
-stats = docs.get_stats()
-print(f"Inbox: {stats.inbox_count}, Archive: {stats.archive_count}")
+docs.archive(inbox[0].id)
 ```
 
-## Workflows
-
-Pre-built workflows for common use cases.
-
-### DigestBuilder
+### Workflows
 
 ```python
-from readwise_sdk.workflows import DigestBuilder
+from readwise_sdk.workflows import DigestBuilder, TagWorkflow
+from readwise_sdk.workflows.tags import TagPattern
 
 digest = DigestBuilder(client)
-
-# Daily digest
-daily = digest.build_daily()
-print(daily.to_markdown())
-
-# Weekly digest
-weekly = digest.build_weekly()
-
-# Book-specific digest
-book_digest = digest.build_for_book(book_id=123)
-book_digest.save("book-notes.md")
-```
-
-### TagWorkflow
-
-```python
-from readwise_sdk.workflows.tags import TagWorkflow, TagPattern
+print(digest.create_daily_digest())
 
 workflow = TagWorkflow(client)
-
-# Define tagging patterns
 patterns = [
     TagPattern(r"\bpython\b", "python", case_sensitive=False),
-    TagPattern(r"\bmachine learning\b", "ml", case_sensitive=False),
-    TagPattern(r"TODO:", "actionable", search_in_notes=True),
+    TagPattern(r"TODO:", "actionable", match_in_notes=True),
 ]
-
-# Auto-tag highlights
 result = workflow.auto_tag_highlights(patterns, dry_run=True)
-print(f"Would tag {result.matched_count} highlights")
-
-# Apply tags
-result = workflow.auto_tag_highlights(patterns, dry_run=False)
-
-# Rename a tag
-workflow.rename_tag(old_name="todo", new_name="actionable")
+print(f"Would tag {len(result)} highlights")
 ```
 
-### ReadingInbox
+### Contrib
 
 ```python
-from readwise_sdk.workflows import ReadingInbox
-
-inbox = ReadingInbox(client)
-
-# Get prioritized inbox
-prioritized = inbox.get_prioritized(limit=10)
-
-# Triage inbox items
-for doc in inbox.get_untriaged():
-    if doc.word_count < 500:
-        inbox.archive(doc.id)
-    else:
-        inbox.move_to_later(doc.id)
-```
-
-## Contrib Interfaces
-
-Simplified interfaces for common integration patterns.
-
-### HighlightPusher
-
-```python
-from readwise_sdk.contrib import HighlightPusher
+from readwise_sdk.contrib import BatchSync, BatchSyncConfig, DocumentImporter, HighlightPusher
 
 pusher = HighlightPusher(client)
-
-# Push a single highlight
-pusher.push(
-    text="Great quote from the article",
-    title="Article Title",
-    source_url="https://example.com/article",
-)
-
-# Push multiple highlights
-pusher.push_batch([
-    {"text": "Quote 1", "title": "Book 1"},
-    {"text": "Quote 2", "title": "Book 2"},
-])
-```
-
-### DocumentImporter
-
-```python
-from readwise_sdk.contrib import DocumentImporter
+pusher.push(text="Great quote from the article", title="Article Title", source_url="https://example.com/article")
 
 importer = DocumentImporter(client)
+doc_id = importer.save_url("https://example.com/article", tags=["to-read", "python"])
 
-# Import a URL
-doc = importer.import_url("https://example.com/article")
-
-# Import with tags
-doc = importer.import_url(
-    "https://example.com/article",
-    tags=["to-read", "python"],
-)
-```
-
-### BatchSync
-
-```python
-from readwise_sdk.contrib import BatchSync, BatchSyncConfig
-
-config = BatchSyncConfig(
-    batch_size=100,
-    state_file="sync_state.json",
-)
-sync = BatchSync(client, config=config)
-
-# Sync with callback
-def on_highlight(highlight):
-    save_to_database(highlight)
-
-result = sync.sync_highlights(on_item=on_highlight)
-print(f"Synced {result.synced_count} highlights")
+sync = BatchSync(client, config=BatchSyncConfig(batch_size=100, state_file="sync_state.json"))
+result = sync.sync_highlights(on_item=lambda h: print(h.text))
 ```
 
 ## CLI
 
-The CLI provides quick access to common operations.
+```bash
+readwise [--output table|json|jsonl] [--no-color] [--quiet] <group> <command> ...
+```
+
+`--output` defaults to `table`; use `json` or `jsonl` for scripting and agent use. `--no-color` disables Rich styling; `--quiet` suppresses non-data notices.
 
 ### Highlights
 
 ```bash
-# List recent highlights
-readwise highlights list --limit 10
-
-# Show a specific highlight
+readwise highlights list --limit 10 --book-id 123
 readwise highlights show 123456
-
-# Export highlights
+readwise highlights create "Important quote" --title "Book Title" --author "Author Name"
+readwise highlights update 123456 --note "revised note"
+readwise highlights delete 123456
+readwise highlights tag 123456 to-review
+readwise highlights untag 123456 to-review
 readwise highlights export -f markdown -o highlights.md
-readwise highlights export -f json -o highlights.json
 ```
 
 ### Books
 
 ```bash
-# List books
-readwise books list --limit 20
-
-# Show book details
+readwise books list --limit 20 --category books
 readwise books show 123
 ```
 
-### Reader
+### Documents
 
 ```bash
-# View inbox
-readwise reader inbox --limit 50
+readwise documents inbox --limit 50
+readwise documents get abc123 --with-content
+readwise documents save "https://example.com/article"
+readwise documents update abc123 --title "New title"
+readwise documents move abc123 archive
+readwise documents tag abc123 to-review
+readwise documents delete abc123
+readwise documents stats
+```
 
-# Save a URL
-readwise reader save "https://example.com/article"
+`readwise reader ...` remains as a deprecated alias for `readwise documents ...` (`inbox`, `save`, `archive`, `stats`, plus every `documents` subcommand); it emits a stderr warning in table mode.
 
-# Archive a document
-readwise reader archive abc123
+### Tags
 
-# Get reading stats
-readwise reader stats
+```bash
+readwise tags list
+readwise tags search python --limit 20
+readwise tags untagged --limit 20
+readwise tags auto-tag --pattern '\bpython\b' --tag python --dry-run
+readwise tags rename old-name new-name --dry-run
+readwise tags merge "tag-a,tag-b" --into merged-tag --dry-run
+readwise tags delete old-tag --dry-run
+readwise tags report
 ```
 
 ### Digests
 
 ```bash
-# Generate daily digest
 readwise digest daily -f markdown
-
-# Generate weekly digest
 readwise digest weekly -o weekly.md
-
-# Generate book digest
 readwise digest book 12345 -o book-notes.md
+readwise digest custom --since 2024-01-01 --group-by-date
 ```
 
 ### Sync
 
 ```bash
-# Full sync
-readwise sync full --output-dir ./data
-
-# Incremental sync
+readwise --output json sync full
 readwise sync incremental --state-file sync.json
+readwise sync status --state-file sync.json
+readwise sync reset --state-file sync.json
 ```
+
+## MCP Server
+
+`readwise-plus` ships an optional [MCP](https://modelcontextprotocol.io) server that exposes Readwise and Reader operations as tools for AI agents (Claude Code, Claude Desktop, or any MCP client). It's a thin layer over the same operations layer used by the SDK facade and CLI — install the `mcp` extra and register the `readwise-mcp` command.
+
+### Register with Claude Code
+
+```bash
+claude mcp add readwise --env READWISE_API_KEY=your-token -- uvx --from "readwise-plus[mcp]" readwise-mcp
+```
+
+### Register with any MCP client
+
+```json
+{
+  "mcpServers": {
+    "readwise": {
+      "command": "uvx",
+      "args": ["--from", "readwise-plus[mcp]", "readwise-mcp"],
+      "env": { "READWISE_API_KEY": "your-token" }
+    }
+  }
+}
+```
+
+If `readwise-plus[mcp]` is already installed in the environment, run the `readwise-mcp` console script (equivalently `python -m readwise_sdk.mcp`) directly.
+
+### Tools
+
+Nine tools, backed by the SDK:
+
+- **Documents (Reader v3):** `save_to_reader`, `search_documents`, `get_document`, `update_document`, `delete_document`
+- **Highlights (Readwise v2):** `get_highlights`, `export_highlights`, `create_highlight`
+- **Books (Readwise v2):** `get_books`
+
+Auth comes from `READWISE_API_KEY` (an environment variable, or a `READWISE_API_KEY=` line in `~/.env`). Talk to your agent in natural language — "save this URL to my reading list", "find the article I archived about X" — and it picks the right tool.
 
 ## Development
 
@@ -441,7 +351,7 @@ Contributions are welcome! Please follow these guidelines:
 4. **Write tests** for new functionality
 5. **Submit a pull request** with a clear description
 
-See [AGENTS.md](AGENTS.md) for detailed development guidelines.
+See [AGENTS.md](AGENTS.md) for detailed development guidelines and [docs/architecture.md](docs/architecture.md) for the layering contributors should preserve.
 
 ## License
 

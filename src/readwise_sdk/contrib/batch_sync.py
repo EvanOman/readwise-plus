@@ -28,13 +28,20 @@ Example:
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from readwise_sdk._utils import parse_datetime_string
+from readwise_sdk.models import SyncCheckpoint
+from readwise_sdk.operations.sync import (
+    AsyncSyncClient,
+    BatchSyncOutcome,
+    SyncClient,
+    SyncOperations,
+)
+from readwise_sdk.state import JsonFileStateStore, MemoryStateStore
 from readwise_sdk.v2.models import Book, Highlight
 from readwise_sdk.v3.models import Document
 
@@ -136,23 +143,24 @@ class BatchSync:
         self._client = client
         self._config = config or BatchSyncConfig()
         self._state_file = Path(self._config.state_file) if self._config.state_file else None
+        self._file_store = JsonFileStateStore(self._state_file) if self._state_file else None
         self._state = self._load_state()
+        self._checkpoint_store = MemoryStateStore(self._checkpoint())
+        self._operation = SyncOperations(
+            sync_client=cast(SyncClient, self._client),
+            state_store=self._checkpoint_store,
+        )
 
     def _load_state(self) -> SyncState:
         """Load state from file if it exists."""
-        if self._state_file and self._state_file.exists():
-            try:
-                data = json.loads(self._state_file.read_text())
-                return SyncState.from_dict(data)
-            except Exception:
-                pass
+        if self._file_store is not None:
+            return self._file_store.load_legacy(SyncState.from_dict, SyncState)
         return SyncState()
 
     def _save_state(self) -> None:
         """Save state to file if configured."""
-        if self._state_file:
-            self._state_file.parent.mkdir(parents=True, exist_ok=True)
-            self._state_file.write_text(json.dumps(self._state.to_dict(), indent=2))
+        if self._file_store is not None:
+            self._file_store.save_legacy(self._state.to_dict())
 
     @property
     def state(self) -> SyncState:
@@ -176,53 +184,15 @@ class BatchSync:
         Returns:
             BatchSyncResult with sync statistics.
         """
-        now = datetime.now(UTC)
-        result = BatchSyncResult(success=True, sync_time=now)
-
-        since = None if full_sync else self._state.last_highlight_sync
-
-        batch: list[Highlight] = []
-
-        try:
-            for highlight in self._client.v2.list_highlights(updated_after=since):
-                try:
-                    if on_item:
-                        on_item(highlight)
-
-                    batch.append(highlight)
-                    result.new_items += 1
-
-                    # Process batch when full
-                    if len(batch) >= self._config.batch_size:
-                        if on_batch:
-                            on_batch(batch)
-                        batch = []
-
-                except Exception as e:
-                    result.failed_items += 1
-                    error_msg = f"Error processing highlight {highlight.id}: {e}"
-                    result.errors.append(error_msg)
-                    self._state.errors.append(error_msg)
-
-                    if not self._config.continue_on_error:
-                        result.success = False
-                        break
-
-            # Process remaining batch
-            if batch and on_batch:
-                on_batch(batch)
-
-            # Update state
-            self._state.last_highlight_sync = now
-            self._state.total_highlights_synced += result.new_items
-            self._state.last_sync_time = now
-            self._save_state()
-
-        except Exception as e:
-            result.success = False
-            result.errors.append(f"Sync failed: {e}")
-
-        return result
+        self._checkpoint_store.save(self._checkpoint())
+        outcome = self._operation.batch_highlights_sync(
+            on_item=on_item,
+            on_batch=on_batch,
+            batch_size=self._config.batch_size,
+            continue_on_error=self._config.continue_on_error,
+            full_sync=full_sync,
+        )
+        return self._finish(outcome, "highlight")
 
     def sync_books(
         self,
@@ -241,53 +211,15 @@ class BatchSync:
         Returns:
             BatchSyncResult with sync statistics.
         """
-        now = datetime.now(UTC)
-        result = BatchSyncResult(success=True, sync_time=now)
-
-        since = None if full_sync else self._state.last_book_sync
-
-        batch: list[Book] = []
-
-        try:
-            for book in self._client.v2.list_books(updated_after=since):
-                try:
-                    if on_item:
-                        on_item(book)
-
-                    batch.append(book)
-                    result.new_items += 1
-
-                    # Process batch when full
-                    if len(batch) >= self._config.batch_size:
-                        if on_batch:
-                            on_batch(batch)
-                        batch = []
-
-                except Exception as e:
-                    result.failed_items += 1
-                    error_msg = f"Error processing book {book.id}: {e}"
-                    result.errors.append(error_msg)
-                    self._state.errors.append(error_msg)
-
-                    if not self._config.continue_on_error:
-                        result.success = False
-                        break
-
-            # Process remaining batch
-            if batch and on_batch:
-                on_batch(batch)
-
-            # Update state
-            self._state.last_book_sync = now
-            self._state.total_books_synced += result.new_items
-            self._state.last_sync_time = now
-            self._save_state()
-
-        except Exception as e:
-            result.success = False
-            result.errors.append(f"Sync failed: {e}")
-
-        return result
+        self._checkpoint_store.save(self._checkpoint())
+        outcome = self._operation.batch_books_sync(
+            on_item=on_item,
+            on_batch=on_batch,
+            batch_size=self._config.batch_size,
+            continue_on_error=self._config.continue_on_error,
+            full_sync=full_sync,
+        )
+        return self._finish(outcome, "book")
 
     def sync_documents(
         self,
@@ -306,53 +238,15 @@ class BatchSync:
         Returns:
             BatchSyncResult with sync statistics.
         """
-        now = datetime.now(UTC)
-        result = BatchSyncResult(success=True, sync_time=now)
-
-        since = None if full_sync else self._state.last_document_sync
-
-        batch: list[Document] = []
-
-        try:
-            for document in self._client.v3.list_documents(updated_after=since):
-                try:
-                    if on_item:
-                        on_item(document)
-
-                    batch.append(document)
-                    result.new_items += 1
-
-                    # Process batch when full
-                    if len(batch) >= self._config.batch_size:
-                        if on_batch:
-                            on_batch(batch)
-                        batch = []
-
-                except Exception as e:
-                    result.failed_items += 1
-                    error_msg = f"Error processing document {document.id}: {e}"
-                    result.errors.append(error_msg)
-                    self._state.errors.append(error_msg)
-
-                    if not self._config.continue_on_error:
-                        result.success = False
-                        break
-
-            # Process remaining batch
-            if batch and on_batch:
-                on_batch(batch)
-
-            # Update state
-            self._state.last_document_sync = now
-            self._state.total_documents_synced += result.new_items
-            self._state.last_sync_time = now
-            self._save_state()
-
-        except Exception as e:
-            result.success = False
-            result.errors.append(f"Sync failed: {e}")
-
-        return result
+        self._checkpoint_store.save(self._checkpoint())
+        outcome = self._operation.batch_documents_sync(
+            on_item=on_item,
+            on_batch=on_batch,
+            batch_size=self._config.batch_size,
+            continue_on_error=self._config.continue_on_error,
+            full_sync=full_sync,
+        )
+        return self._finish(outcome, "document")
 
     def sync_all(
         self,
@@ -381,6 +275,7 @@ class BatchSync:
     def reset_state(self) -> None:
         """Reset sync state (next sync will be full sync)."""
         self._state = SyncState()
+        self._checkpoint_store.save(SyncCheckpoint())
         self._save_state()
 
     def get_stats(self) -> dict:
@@ -399,6 +294,45 @@ class BatchSync:
             "error_count": len(self._state.errors),
             "last_sync_time": self._state.last_sync_time,
         }
+
+    def _checkpoint(self) -> SyncCheckpoint:
+        return SyncCheckpoint(
+            last_highlight_sync=self._state.last_highlight_sync,
+            last_book_sync=self._state.last_book_sync,
+            last_document_sync=self._state.last_document_sync,
+            last_sync_time=self._state.last_sync_time,
+        )
+
+    def _finish(
+        self,
+        outcome: BatchSyncOutcome,
+        resource: str,
+    ) -> BatchSyncResult:
+        processing_errors = [
+            error for error in outcome.errors if error.startswith("Error processing ")
+        ]
+        self._state.errors.extend(processing_errors)
+        if not any(error.startswith("Sync failed: ") for error in outcome.errors):
+            checkpoint = self._checkpoint_store.load()
+            self._state.last_sync_time = checkpoint.last_sync_time
+            if resource == "highlight":
+                self._state.last_highlight_sync = checkpoint.last_highlight_sync
+                self._state.total_highlights_synced += outcome.new_items
+            elif resource == "book":
+                self._state.last_book_sync = checkpoint.last_book_sync
+                self._state.total_books_synced += outcome.new_items
+            else:
+                self._state.last_document_sync = checkpoint.last_document_sync
+                self._state.total_documents_synced += outcome.new_items
+            self._save_state()
+        return BatchSyncResult(
+            success=outcome.success,
+            new_items=outcome.new_items,
+            updated_items=outcome.updated_items,
+            failed_items=outcome.failed_items,
+            errors=outcome.errors,
+            sync_time=outcome.sync_time,
+        )
 
 
 class AsyncBatchSync:
@@ -443,23 +377,24 @@ class AsyncBatchSync:
         self._client = client
         self._config = config or BatchSyncConfig()
         self._state_file = Path(self._config.state_file) if self._config.state_file else None
+        self._file_store = JsonFileStateStore(self._state_file) if self._state_file else None
         self._state = self._load_state()
+        self._checkpoint_store = MemoryStateStore(self._checkpoint())
+        self._operation = SyncOperations(
+            async_client=cast(AsyncSyncClient, self._client),
+            state_store=self._checkpoint_store,
+        )
 
     def _load_state(self) -> SyncState:
         """Load state from file if it exists."""
-        if self._state_file and self._state_file.exists():
-            try:
-                data = json.loads(self._state_file.read_text())
-                return SyncState.from_dict(data)
-            except Exception:
-                pass
+        if self._file_store is not None:
+            return self._file_store.load_legacy(SyncState.from_dict, SyncState)
         return SyncState()
 
     def _save_state(self) -> None:
         """Save state to file if configured."""
-        if self._state_file:
-            self._state_file.parent.mkdir(parents=True, exist_ok=True)
-            self._state_file.write_text(json.dumps(self._state.to_dict(), indent=2))
+        if self._file_store is not None:
+            self._file_store.save_legacy(self._state.to_dict())
 
     @property
     def state(self) -> SyncState:
@@ -485,61 +420,15 @@ class AsyncBatchSync:
         Returns:
             BatchSyncResult with sync statistics.
         """
-        import inspect
-
-        now = datetime.now(UTC)
-        result = BatchSyncResult(success=True, sync_time=now)
-
-        since = None if full_sync else self._state.last_highlight_sync
-
-        batch: list[Highlight] = []
-
-        try:
-            async for highlight in self._client.v2.list_highlights(updated_after=since):
-                try:
-                    if on_item:
-                        cb_result = on_item(highlight)
-                        if inspect.isawaitable(cb_result):
-                            await cb_result
-
-                    batch.append(highlight)
-                    result.new_items += 1
-
-                    # Process batch when full
-                    if len(batch) >= self._config.batch_size:
-                        if on_batch:
-                            batch_result = on_batch(batch)
-                            if inspect.isawaitable(batch_result):
-                                await batch_result
-                        batch = []
-
-                except Exception as e:
-                    result.failed_items += 1
-                    error_msg = f"Error processing highlight {highlight.id}: {e}"
-                    result.errors.append(error_msg)
-                    self._state.errors.append(error_msg)
-
-                    if not self._config.continue_on_error:
-                        result.success = False
-                        break
-
-            # Process remaining batch
-            if batch and on_batch:
-                batch_result = on_batch(batch)
-                if inspect.isawaitable(batch_result):
-                    await batch_result
-
-            # Update state
-            self._state.last_highlight_sync = now
-            self._state.total_highlights_synced += result.new_items
-            self._state.last_sync_time = now
-            self._save_state()
-
-        except Exception as e:
-            result.success = False
-            result.errors.append(f"Sync failed: {e}")
-
-        return result
+        self._checkpoint_store.save(self._checkpoint())
+        outcome = await self._operation.batch_highlights(
+            on_item=on_item,
+            on_batch=on_batch,
+            batch_size=self._config.batch_size,
+            continue_on_error=self._config.continue_on_error,
+            full_sync=full_sync,
+        )
+        return self._finish(outcome, "highlight")
 
     async def sync_books(
         self,
@@ -560,61 +449,15 @@ class AsyncBatchSync:
         Returns:
             BatchSyncResult with sync statistics.
         """
-        import inspect
-
-        now = datetime.now(UTC)
-        result = BatchSyncResult(success=True, sync_time=now)
-
-        since = None if full_sync else self._state.last_book_sync
-
-        batch: list[Book] = []
-
-        try:
-            async for book in self._client.v2.list_books(updated_after=since):
-                try:
-                    if on_item:
-                        cb_result = on_item(book)
-                        if inspect.isawaitable(cb_result):
-                            await cb_result
-
-                    batch.append(book)
-                    result.new_items += 1
-
-                    # Process batch when full
-                    if len(batch) >= self._config.batch_size:
-                        if on_batch:
-                            batch_result = on_batch(batch)
-                            if inspect.isawaitable(batch_result):
-                                await batch_result
-                        batch = []
-
-                except Exception as e:
-                    result.failed_items += 1
-                    error_msg = f"Error processing book {book.id}: {e}"
-                    result.errors.append(error_msg)
-                    self._state.errors.append(error_msg)
-
-                    if not self._config.continue_on_error:
-                        result.success = False
-                        break
-
-            # Process remaining batch
-            if batch and on_batch:
-                batch_result = on_batch(batch)
-                if inspect.isawaitable(batch_result):
-                    await batch_result
-
-            # Update state
-            self._state.last_book_sync = now
-            self._state.total_books_synced += result.new_items
-            self._state.last_sync_time = now
-            self._save_state()
-
-        except Exception as e:
-            result.success = False
-            result.errors.append(f"Sync failed: {e}")
-
-        return result
+        self._checkpoint_store.save(self._checkpoint())
+        outcome = await self._operation.batch_books(
+            on_item=on_item,
+            on_batch=on_batch,
+            batch_size=self._config.batch_size,
+            continue_on_error=self._config.continue_on_error,
+            full_sync=full_sync,
+        )
+        return self._finish(outcome, "book")
 
     async def sync_documents(
         self,
@@ -635,61 +478,15 @@ class AsyncBatchSync:
         Returns:
             BatchSyncResult with sync statistics.
         """
-        import inspect
-
-        now = datetime.now(UTC)
-        result = BatchSyncResult(success=True, sync_time=now)
-
-        since = None if full_sync else self._state.last_document_sync
-
-        batch: list[Document] = []
-
-        try:
-            async for document in self._client.v3.list_documents(updated_after=since):
-                try:
-                    if on_item:
-                        cb_result = on_item(document)
-                        if inspect.isawaitable(cb_result):
-                            await cb_result
-
-                    batch.append(document)
-                    result.new_items += 1
-
-                    # Process batch when full
-                    if len(batch) >= self._config.batch_size:
-                        if on_batch:
-                            batch_result = on_batch(batch)
-                            if inspect.isawaitable(batch_result):
-                                await batch_result
-                        batch = []
-
-                except Exception as e:
-                    result.failed_items += 1
-                    error_msg = f"Error processing document {document.id}: {e}"
-                    result.errors.append(error_msg)
-                    self._state.errors.append(error_msg)
-
-                    if not self._config.continue_on_error:
-                        result.success = False
-                        break
-
-            # Process remaining batch
-            if batch and on_batch:
-                batch_result = on_batch(batch)
-                if inspect.isawaitable(batch_result):
-                    await batch_result
-
-            # Update state
-            self._state.last_document_sync = now
-            self._state.total_documents_synced += result.new_items
-            self._state.last_sync_time = now
-            self._save_state()
-
-        except Exception as e:
-            result.success = False
-            result.errors.append(f"Sync failed: {e}")
-
-        return result
+        self._checkpoint_store.save(self._checkpoint())
+        outcome = await self._operation.batch_documents(
+            on_item=on_item,
+            on_batch=on_batch,
+            batch_size=self._config.batch_size,
+            continue_on_error=self._config.continue_on_error,
+            full_sync=full_sync,
+        )
+        return self._finish(outcome, "document")
 
     async def sync_all(
         self,
@@ -722,6 +519,7 @@ class AsyncBatchSync:
     def reset_state(self) -> None:
         """Reset sync state (next sync will be full sync)."""
         self._state = SyncState()
+        self._checkpoint_store.save(SyncCheckpoint())
         self._save_state()
 
     def get_stats(self) -> dict:
@@ -740,3 +538,42 @@ class AsyncBatchSync:
             "error_count": len(self._state.errors),
             "last_sync_time": self._state.last_sync_time,
         }
+
+    def _checkpoint(self) -> SyncCheckpoint:
+        return SyncCheckpoint(
+            last_highlight_sync=self._state.last_highlight_sync,
+            last_book_sync=self._state.last_book_sync,
+            last_document_sync=self._state.last_document_sync,
+            last_sync_time=self._state.last_sync_time,
+        )
+
+    def _finish(
+        self,
+        outcome: BatchSyncOutcome,
+        resource: str,
+    ) -> BatchSyncResult:
+        processing_errors = [
+            error for error in outcome.errors if error.startswith("Error processing ")
+        ]
+        self._state.errors.extend(processing_errors)
+        if not any(error.startswith("Sync failed: ") for error in outcome.errors):
+            checkpoint = self._checkpoint_store.load()
+            self._state.last_sync_time = checkpoint.last_sync_time
+            if resource == "highlight":
+                self._state.last_highlight_sync = checkpoint.last_highlight_sync
+                self._state.total_highlights_synced += outcome.new_items
+            elif resource == "book":
+                self._state.last_book_sync = checkpoint.last_book_sync
+                self._state.total_books_synced += outcome.new_items
+            else:
+                self._state.last_document_sync = checkpoint.last_document_sync
+                self._state.total_documents_synced += outcome.new_items
+            self._save_state()
+        return BatchSyncResult(
+            success=outcome.success,
+            new_items=outcome.new_items,
+            updated_items=outcome.updated_items,
+            failed_items=outcome.failed_items,
+            errors=outcome.errors,
+            sync_time=outcome.sync_time,
+        )

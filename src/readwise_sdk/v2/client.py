@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from readwise_sdk.client import READWISE_API_V2_BASE, ReadwiseClient
+from readwise_sdk.client import ReadwiseClient
+from readwise_sdk.transport.pagination import ExportV2Page, paginate
 from readwise_sdk.v2.models import (
     Book,
     BookCategory,
@@ -71,7 +72,7 @@ class ReadwiseV2Client:
             params["highlighted_at__lt"] = highlighted_before.isoformat()
 
         for item in self._client.paginate(
-            f"{READWISE_API_V2_BASE}/highlights/",
+            f"{self._client.config.v2_base_url}/highlights/",
             params=params,
         ):
             yield Highlight.model_validate(item)
@@ -88,7 +89,7 @@ class ReadwiseV2Client:
         Raises:
             NotFoundError: If the highlight doesn't exist.
         """
-        response = self._client.get(f"{READWISE_API_V2_BASE}/highlights/{highlight_id}/")
+        response = self._client.get(f"{self._client.config.v2_base_url}/highlights/{highlight_id}/")
         return Highlight.model_validate(response.json())
 
     def create_highlights(self, highlights: list[HighlightCreate]) -> list[int]:
@@ -101,7 +102,7 @@ class ReadwiseV2Client:
             List of created highlight IDs (from modified_highlights).
         """
         payload = {"highlights": [h.to_api_dict() for h in highlights]}
-        response = self._client.post(f"{READWISE_API_V2_BASE}/highlights/", json=payload)
+        response = self._client.post(f"{self._client.config.v2_base_url}/highlights/", json=payload)
         data = response.json()
 
         # Extract modified highlight IDs from response
@@ -126,7 +127,7 @@ class ReadwiseV2Client:
             NotFoundError: If the highlight doesn't exist.
         """
         response = self._client.patch(
-            f"{READWISE_API_V2_BASE}/highlights/{highlight_id}/",
+            f"{self._client.config.v2_base_url}/highlights/{highlight_id}/",
             json=update.to_api_dict(),
         )
         return Highlight.model_validate(response.json())
@@ -140,7 +141,7 @@ class ReadwiseV2Client:
         Raises:
             NotFoundError: If the highlight doesn't exist.
         """
-        self._client.delete(f"{READWISE_API_V2_BASE}/highlights/{highlight_id}/")
+        self._client.delete(f"{self._client.config.v2_base_url}/highlights/{highlight_id}/")
 
     # ==================== Books ====================
 
@@ -185,7 +186,7 @@ class ReadwiseV2Client:
             params["last_highlight_at__lt"] = last_highlight_before.isoformat()
 
         for item in self._client.paginate(
-            f"{READWISE_API_V2_BASE}/books/",
+            f"{self._client.config.v2_base_url}/books/",
             params=params,
         ):
             yield Book.model_validate(item)
@@ -202,7 +203,7 @@ class ReadwiseV2Client:
         Raises:
             NotFoundError: If the book doesn't exist.
         """
-        response = self._client.get(f"{READWISE_API_V2_BASE}/books/{book_id}/")
+        response = self._client.get(f"{self._client.config.v2_base_url}/books/{book_id}/")
         return Book.model_validate(response.json())
 
     # ==================== Highlight Tags ====================
@@ -220,7 +221,7 @@ class ReadwiseV2Client:
             NotFoundError: If the highlight doesn't exist.
         """
         for item in self._client.paginate(
-            f"{READWISE_API_V2_BASE}/highlights/{highlight_id}/tags/",
+            f"{self._client.config.v2_base_url}/highlights/{highlight_id}/tags/",
         ):
             yield Tag.model_validate(item)
 
@@ -238,7 +239,7 @@ class ReadwiseV2Client:
             NotFoundError: If the highlight doesn't exist.
         """
         response = self._client.post(
-            f"{READWISE_API_V2_BASE}/highlights/{highlight_id}/tags/",
+            f"{self._client.config.v2_base_url}/highlights/{highlight_id}/tags/",
             json={"name": name[:127]},
         )
         return Tag.model_validate(response.json())
@@ -258,7 +259,7 @@ class ReadwiseV2Client:
             NotFoundError: If the highlight or tag doesn't exist.
         """
         response = self._client.patch(
-            f"{READWISE_API_V2_BASE}/highlights/{highlight_id}/tags/{tag_id}/",
+            f"{self._client.config.v2_base_url}/highlights/{highlight_id}/tags/{tag_id}/",
             json={"name": name[:127]},
         )
         return Tag.model_validate(response.json())
@@ -273,7 +274,9 @@ class ReadwiseV2Client:
         Raises:
             NotFoundError: If the highlight or tag doesn't exist.
         """
-        self._client.delete(f"{READWISE_API_V2_BASE}/highlights/{highlight_id}/tags/{tag_id}/")
+        self._client.delete(
+            f"{self._client.config.v2_base_url}/highlights/{highlight_id}/tags/{tag_id}/"
+        )
 
     # ==================== Book Tags ====================
 
@@ -290,7 +293,7 @@ class ReadwiseV2Client:
             NotFoundError: If the book doesn't exist.
         """
         for item in self._client.paginate(
-            f"{READWISE_API_V2_BASE}/books/{book_id}/tags/",
+            f"{self._client.config.v2_base_url}/books/{book_id}/tags/",
         ):
             yield Tag.model_validate(item)
 
@@ -308,7 +311,7 @@ class ReadwiseV2Client:
             NotFoundError: If the book doesn't exist.
         """
         response = self._client.post(
-            f"{READWISE_API_V2_BASE}/books/{book_id}/tags/",
+            f"{self._client.config.v2_base_url}/books/{book_id}/tags/",
             json={"name": name[:512]},
         )
         return Tag.model_validate(response.json())
@@ -328,7 +331,7 @@ class ReadwiseV2Client:
             NotFoundError: If the book or tag doesn't exist.
         """
         response = self._client.patch(
-            f"{READWISE_API_V2_BASE}/books/{book_id}/tags/{tag_id}/",
+            f"{self._client.config.v2_base_url}/books/{book_id}/tags/{tag_id}/",
             json={"name": name[:512]},
         )
         return Tag.model_validate(response.json())
@@ -343,7 +346,7 @@ class ReadwiseV2Client:
         Raises:
             NotFoundError: If the book or tag doesn't exist.
         """
-        self._client.delete(f"{READWISE_API_V2_BASE}/books/{book_id}/tags/{tag_id}/")
+        self._client.delete(f"{self._client.config.v2_base_url}/books/{book_id}/tags/{tag_id}/")
 
     # ==================== Export ====================
 
@@ -376,10 +379,11 @@ class ReadwiseV2Client:
         if include_deleted:
             params["includeDeleted"] = "true"
 
-        for item in self._client.paginate(
-            f"{READWISE_API_V2_BASE}/export/",
+        for item in paginate(
+            self._client.get,
+            f"{self._client.config.v2_base_url}/export/",
             params=params,
-            cursor_key="nextPageCursor",
+            decoder=ExportV2Page(),
         ):
             yield ExportBook.model_validate(item)
 
@@ -391,5 +395,5 @@ class ReadwiseV2Client:
         Returns:
             The DailyReview object with selected highlights.
         """
-        response = self._client.get(f"{READWISE_API_V2_BASE}/review/")
+        response = self._client.get(f"{self._client.config.v2_base_url}/review/")
         return DailyReview.model_validate(response.json())

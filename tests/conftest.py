@@ -12,6 +12,11 @@ try:
 except ModuleNotFoundError:
     collect_ignore.append(str(Path(__file__).parent / "test_cli.py"))
 
+try:
+    import mcp  # noqa: F401
+except ModuleNotFoundError:
+    collect_ignore.append(str(Path(__file__).parent / "mcp"))
+
 
 @pytest.fixture
 def api_key() -> str:

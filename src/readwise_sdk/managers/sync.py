@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from readwise_sdk._utils import parse_datetime_string
+from readwise_sdk.models import SyncCheckpoint
+from readwise_sdk.models import SyncResult as CanonicalSyncResult
+from readwise_sdk.operations.sync import SyncClient, SyncOperations
+from readwise_sdk.state import JsonFileStateStore, MemoryStateStore
 from readwise_sdk.v2.models import Book, Highlight
 from readwise_sdk.v3.models import Document
 
@@ -86,24 +89,25 @@ class SyncManager:
         """
         self._client = client
         self._state_file = Path(state_file) if state_file else None
+        self._file_store = JsonFileStateStore(self._state_file) if self._state_file else None
         self._state = self._load_state()
         self._callbacks: list[Callable[[SyncResult], None]] = []
+        self._checkpoint_store = MemoryStateStore(self._checkpoint())
+        self._operation = SyncOperations(
+            sync_client=cast(SyncClient, self._client),
+            state_store=self._checkpoint_store,
+        )
 
     def _load_state(self) -> SyncState:
         """Load state from file if it exists."""
-        if self._state_file and self._state_file.exists():
-            try:
-                data = json.loads(self._state_file.read_text())
-                return SyncState.from_dict(data)
-            except Exception:
-                pass
+        if self._file_store is not None:
+            return self._file_store.load_legacy(SyncState.from_dict, SyncState)
         return SyncState()
 
     def _save_state(self) -> None:
         """Save state to file if configured."""
-        if self._state_file:
-            self._state_file.parent.mkdir(parents=True, exist_ok=True)
-            self._state_file.write_text(json.dumps(self._state.to_dict(), indent=2))
+        if self._file_store is not None:
+            self._file_store.save_legacy(self._state.to_dict())
 
     @property
     def state(self) -> SyncState:
@@ -120,11 +124,7 @@ class SyncManager:
 
     def _notify_callbacks(self, result: SyncResult) -> None:
         """Notify all registered callbacks."""
-        for callback in self._callbacks:
-            try:
-                callback(result)
-            except Exception:
-                pass  # Don't let callback errors break the sync
+        self._operation.notify_callbacks(self._callbacks, result)
 
     def full_sync(
         self,
@@ -143,27 +143,13 @@ class SyncManager:
         Returns:
             SyncResult with all synced data.
         """
-        now = datetime.now(UTC)
-        result = SyncResult(sync_time=now)
-
-        if include_highlights:
-            result.highlights = list(self._client.v2.list_highlights())
-            self._state.last_highlight_sync = now
-
-        if include_books:
-            result.books = list(self._client.v2.list_books())
-            self._state.last_book_sync = now
-
-        if include_documents:
-            result.documents = list(self._client.v3.list_documents())
-            self._state.last_document_sync = now
-
-        self._state.total_syncs += 1
-        self._state.last_sync_time = now
-        self._save_state()
-        self._notify_callbacks(result)
-
-        return result
+        self._checkpoint_store.save(self._checkpoint())
+        canonical = self._operation.full_sync(
+            include_highlights=include_highlights,
+            include_books=include_books,
+            include_documents=include_documents,
+        )
+        return self._finish(canonical)
 
     def incremental_sync(
         self,
@@ -182,39 +168,13 @@ class SyncManager:
         Returns:
             SyncResult with newly synced data.
         """
-        now = datetime.now(UTC)
-        result = SyncResult(sync_time=now)
-
-        if include_highlights:
-            since = self._state.last_highlight_sync
-            if since:
-                result.highlights = list(self._client.v2.list_highlights(updated_after=since))
-            else:
-                result.highlights = list(self._client.v2.list_highlights())
-            self._state.last_highlight_sync = now
-
-        if include_books:
-            since = self._state.last_book_sync
-            if since:
-                result.books = list(self._client.v2.list_books(updated_after=since))
-            else:
-                result.books = list(self._client.v2.list_books())
-            self._state.last_book_sync = now
-
-        if include_documents:
-            since = self._state.last_document_sync
-            if since:
-                result.documents = list(self._client.v3.list_documents(updated_after=since))
-            else:
-                result.documents = list(self._client.v3.list_documents())
-            self._state.last_document_sync = now
-
-        self._state.total_syncs += 1
-        self._state.last_sync_time = now
-        self._save_state()
-        self._notify_callbacks(result)
-
-        return result
+        self._checkpoint_store.save(self._checkpoint())
+        canonical = self._operation.incremental_sync(
+            include_highlights=include_highlights,
+            include_books=include_books,
+            include_documents=include_documents,
+        )
+        return self._finish(canonical)
 
     def sync_highlights_only(self) -> SyncResult:
         """Sync only highlights.
@@ -235,4 +195,30 @@ class SyncManager:
     def reset_state(self) -> None:
         """Reset the sync state (next sync will be full)."""
         self._state = SyncState()
+        self._checkpoint_store.save(SyncCheckpoint())
         self._save_state()
+
+    def _checkpoint(self) -> SyncCheckpoint:
+        return SyncCheckpoint(
+            last_highlight_sync=self._state.last_highlight_sync,
+            last_book_sync=self._state.last_book_sync,
+            last_document_sync=self._state.last_document_sync,
+            last_sync_time=self._state.last_sync_time,
+        )
+
+    def _finish(self, canonical: CanonicalSyncResult) -> SyncResult:
+        checkpoint = canonical.checkpoint
+        self._state.last_highlight_sync = checkpoint.last_highlight_sync
+        self._state.last_book_sync = checkpoint.last_book_sync
+        self._state.last_document_sync = checkpoint.last_document_sync
+        self._state.last_sync_time = checkpoint.last_sync_time
+        self._state.total_syncs += 1
+        self._save_state()
+        result = SyncResult(
+            highlights=canonical.highlights,
+            books=canonical.books,
+            documents=canonical.documents,
+            sync_time=checkpoint.last_sync_time or datetime.now(UTC),
+        )
+        self._notify_callbacks(result)
+        return result
