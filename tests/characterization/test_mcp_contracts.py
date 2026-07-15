@@ -49,8 +49,8 @@ async def test_save_to_reader_returns_exact_compact_json() -> None:
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_save_to_reader_category_is_currently_dropped_from_payload() -> None:
-    """The accepted category argument is not copied into DocumentCreate today."""
+async def test_save_to_reader_includes_category_in_payload() -> None:
+    """The category argument is validated and copied into the save payload."""
     route = respx.post(f"{V3_BASE}/save/").mock(
         return_value=httpx.Response(201, json={"id": "doc-1", "url": "reader-url"})
     )
@@ -67,7 +67,6 @@ async def test_save_to_reader_category_is_currently_dropped_from_payload() -> No
         location="later",
     )
 
-    # NOTE: characterizes current (possibly buggy) behavior; category is dropped.
     assert json.loads(route.calls.last.request.content) == {
         "url": "https://example.com",
         "html": "<p>Body</p>",
@@ -75,10 +74,25 @@ async def test_save_to_reader_category_is_currently_dropped_from_payload() -> No
         "author": "Author",
         "summary": "Summary",
         "location": "later",
+        "category": "article",
         "saved_using": "readwise-mcp",
         "tags": ["tag"],
         "notes": "Note",
     }
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_save_to_reader_rejects_invalid_category() -> None:
+    """An unknown category returns an error envelope and makes no request."""
+    route = respx.post(f"{V3_BASE}/save/").mock(
+        return_value=httpx.Response(201, json={"id": "doc-1", "url": "reader-url"})
+    )
+
+    result = await save_to_reader("https://example.com", category="bogus")
+
+    assert json.loads(result) == {"error": "Invalid category 'bogus'."}
+    assert not route.called
 
 
 @respx.mock

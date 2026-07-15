@@ -201,8 +201,8 @@ async def test_get_save_update_delete_and_move_delegate_typed_results() -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_intentionally_drops_category_to_preserve_current_mcp_bug() -> None:
-    """The accepted save category remains absent from the resource payload in PR 6."""
+async def test_save_preserves_category() -> None:
+    """The save category is passed through to the resource payload."""
     resource = FakeDocumentsResource()
     operations = DocumentOperations(resource)
     create = DocumentCreate(
@@ -214,8 +214,7 @@ async def test_save_intentionally_drops_category_to_preserve_current_mcp_bug() -
 
     await operations.save(create)
 
-    # Characterizes current (buggy) behavior; a later stage fixes category handling.
-    assert resource.create_calls[0].category is None
+    assert resource.create_calls[0].category is DocumentCategory.ARTICLE
     assert resource.create_calls[0].location is DocumentLocation.LATER
     assert resource.create_calls[0].saved_using == "readwise-mcp"
 

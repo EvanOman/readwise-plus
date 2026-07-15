@@ -116,11 +116,8 @@ class DocumentOperations:
         return await self._resource.get(document_id, with_content=with_content)
 
     async def save(self, document: DocumentCreate) -> CreateDocumentResult:
-        """Save a document while preserving the current dropped-category bug."""
-        # Characterizes current (buggy) save_to_reader behavior. A later stage
-        # deliberately restores category after the operation contract is established.
-        without_category = document.model_copy(update={"category": None})
-        return await self._resource.create(without_category)
+        """Save a document (including its category) to Reader."""
+        return await self._resource.create(document)
 
     async def update(
         self,

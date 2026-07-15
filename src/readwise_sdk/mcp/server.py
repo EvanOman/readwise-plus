@@ -161,6 +161,13 @@ async def save_to_reader(
         except ValueError:
             return _error_result(f"Invalid location '{location}'. Use: new, later, archive, feed.")
 
+    doc_category = None
+    if category:
+        try:
+            doc_category = DocumentCategory(category)
+        except ValueError:
+            return _error_result(f"Invalid category '{category}'.")
+
     doc = DocumentCreate(
         url=url,
         title=title,
@@ -169,6 +176,7 @@ async def save_to_reader(
         html=html,
         tags=tags,
         notes=notes,
+        category=doc_category,
         location=doc_location,
         saved_using="readwise-mcp",
     )

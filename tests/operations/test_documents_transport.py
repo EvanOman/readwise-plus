@@ -67,8 +67,8 @@ async def test_search_transport_keeps_single_tag_query_quirk_and_mcp_projection(
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_save_transport_preserves_buggy_category_omission() -> None:
-    """The real save payload omits category while retaining the other MCP fields."""
+async def test_save_transport_includes_category() -> None:
+    """The real save payload includes category alongside the other fields."""
     route = respx.post(f"{V3_BASE}/save/").mock(
         return_value=httpx.Response(201, json={"id": "doc-1", "url": "reader-url"})
     )
@@ -93,6 +93,7 @@ async def test_save_transport_preserves_buggy_category_omission() -> None:
         "url": "https://example.com",
         "title": "Title",
         "location": "later",
+        "category": "article",
         "saved_using": "readwise-mcp",
         "tags": ["tag"],
     }
