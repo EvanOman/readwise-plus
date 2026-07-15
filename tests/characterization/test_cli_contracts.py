@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 from importlib.metadata import version
 
 import httpx
@@ -121,8 +122,11 @@ def test_invalid_book_category_is_an_exit_one_message_on_stdout(
 def test_typer_parse_error_is_exit_two_and_routed_to_stderr() -> None:
     """Framework-level argument errors differ from application errors."""
     result = runner.invoke(app, ["highlights", "list", "--bad-option"])
+    # Strip ANSI so the assertion holds whether or not the runner forces color
+    # (GitHub Actions enables it; a plain terminal does not).
+    stderr = re.sub(r"\x1b\[[0-9;]*m", "", result.stderr)
 
     assert result.exit_code == 2
     assert result.stdout == ""
-    assert "No such option: --bad-option" in result.stderr
-    assert "Usage: readwise highlights list [OPTIONS]" in result.stderr
+    assert "No such option: --bad-option" in stderr
+    assert "Usage: readwise highlights list [OPTIONS]" in stderr
