@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0](https://github.com/EvanOman/readwise-plus/compare/v0.2.1...v0.3.0) (2026-07-15)
+
+
+### Features
+
+* add AsyncReadwise SDK facade (stage 9) ([d934078](https://github.com/EvanOman/readwise-plus/commit/d93407881403d9b50c0a1336c86f7d66b12e20ba))
+* add operation input + result models (stage 5) ([02bc8d9](https://github.com/EvanOman/readwise-plus/commit/02bc8d99b8b5bd44af306f1ff3f650597ef513f8))
+* add synchronous Readwise facade via anyio portal (stage 10) ([5303a63](https://github.com/EvanOman/readwise-plus/commit/5303a637e94147edf179c873f6d72cfdd7829f58))
+* **cli:** expand operations-backed commands + reader aliases (stage 12) ([f750f07](https://github.com/EvanOman/readwise-plus/commit/f750f0747f25d97c77e63931a0a4e8928aee2b15))
+* document operations layer (stage 6) ([1258250](https://github.com/EvanOman/readwise-plus/commit/1258250c0f57d24dfa6d81266b80d1e1de2e35ee))
+* highlight + book operations layer (stage 7) ([d1e13e0](https://github.com/EvanOman/readwise-plus/commit/d1e13e0f5d786828c20f17d3a48ff4054f07ae98))
+* **mcp:** add MCP server as the readwise-plus[mcp] extra ([f836514](https://github.com/EvanOman/readwise-plus/commit/f836514297b22fec4b5f97c66bef01f3fa2e5739))
+* unified operations-core architecture (0.3.0) + MCP extra ([3159ad4](https://github.com/EvanOman/readwise-plus/commit/3159ad44a6207a74f9f0f4b2467d6758cc0fd337))
+
+
+### Bug Fixes
+
+* **client:** handle integer pagination cursors from export API ([a926e16](https://github.com/EvanOman/readwise-plus/commit/a926e167da58a486bbec17c1a1d5f01f94f867a1))
+* **mcp:** include category in save_to_reader payload ([32eb337](https://github.com/EvanOman/readwise-plus/commit/32eb337ff1b4f8b3d4cb2394ff83e5010d48ca7c))
+
+
+### Documentation
+
+* 0.3.0 architecture plan + Feathers refactoring discipline ([9172b04](https://github.com/EvanOman/readwise-plus/commit/9172b041162358fe15c0d191f438790486dc8d17))
+* document the 0.3 concept-facade architecture + migration guide (stage 18) ([99d3dc0](https://github.com/EvanOman/readwise-plus/commit/99d3dc0823b7af96120dd738f9056ae4902bbf4b))
+
 ## [0.2.1](https://github.com/EvanOman/readwise-plus/compare/v0.2.0...v0.2.1) (2026-02-16)
 
 
